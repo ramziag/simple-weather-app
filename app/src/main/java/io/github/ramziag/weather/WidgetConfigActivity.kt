@@ -32,15 +32,24 @@ class WidgetConfigActivity : Activity() {
         val store = Store.get(this)
         val home = store.home
         val cities = store.cities
-        val homeLabel = getString(R.string.widget_follow_home) + (home?.let { " · ${it.name}" } ?: "")
-        val labels = arrayOf(homeLabel) + cities.map { if (it.area.isEmpty()) it.name else "${it.name}, ${it.area.substringBefore(',')}" }
-        val current = Widgets.chosenPlace(this, id)?.let { cities.indexOf(it) + 1 }?.takeIf { it > 0 } ?: 0
+        val chosen = Widgets.chosenPlace(this, id)
+        // null = follow the hometown. A widget can be set to a city that has since become the hometown; keep
+        // that choice on the list so it shows as picked.
+        val options: List<Place?> = listOf(null) + cities + listOfNotNull(chosen?.takeIf { it !in cities })
+        val labels = options.map { p ->
+            when {
+                p == null -> getString(R.string.widget_follow_home) + (home?.let { " · ${it.name}" } ?: "")
+                p.area.isEmpty() -> p.name
+                else -> "${p.name}, ${p.area.substringBefore(',')}"
+            }
+        }.toTypedArray()
+        val current = options.indexOf(chosen)
 
         val themed = ContextThemeWrapper(this, Themes.style(store.theme, resources.configuration))
         AlertDialog.Builder(themed)
             .setTitle(R.string.widget_pick)
             .setSingleChoiceItems(labels, current) { dialog, which ->
-                Widgets.choose(this, id, if (which == 0) null else cities[which - 1])
+                Widgets.choose(this, id, options[which])
                 mgr.updateAppWidget(id, Widgets.build(this, mgr, id))
                 Widgets.refreshIfStale(this, intArrayOf(id))
                 setResult(RESULT_OK, result)

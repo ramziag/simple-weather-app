@@ -22,13 +22,19 @@ class WidgetRefreshJob : JobService() {
         val app = applicationContext
         Thread {
             try {
-                val ids = Widgets.ids(app)
-                for (place in Widgets.places(app, ids)) {
-                    if (stopped) break
-                    // Failures (offline, timeouts) are fine: the cached forecast stays and the next tick retries.
-                    runCatching { ForecastFiles.load(app, place, Widgets.MAX_AGE_MS) }
+                // Each place once. Widgets placed or pointed at another city while this runs can't schedule a
+                // job of their own (this one is still pending), so look again until nothing new turns up.
+                val tried = HashSet<Place>()
+                while (!stopped) {
+                    val todo = Widgets.places(app, Widgets.ids(app)).filter { tried.add(it) && Widgets.isStale(app, it) }
+                    if (todo.isEmpty()) break
+                    for (place in todo) {
+                        if (stopped) break
+                        // Failures (offline, timeouts) are fine: the cached forecast stays and the next tick retries.
+                        runCatching { ForecastFiles.load(app, place, Widgets.MAX_AGE_MS) }
+                    }
                 }
-                if (!stopped) Widgets.render(app, ids)
+                if (!stopped) Widgets.render(app, Widgets.ids(app))
             } finally {
                 if (!stopped) jobFinished(params, false)
                 this.params = null

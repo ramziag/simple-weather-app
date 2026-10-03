@@ -22,8 +22,9 @@ import java.util.concurrent.Executors
  * Home-screen widget: drawing, which city each widget shows, and background refresh.
  *
  * Widgets are drawn by the launcher from RemoteViews, so the layouts use only RemoteViews-safe views and no
- * app theme attributes. Their colours default to the Auto theme through @color resources (with values-night);
- * for any other theme the colours are pushed from here.
+ * app theme attributes. Colours are pushed from here for every theme (the @color defaults only show in the
+ * widget picker), because a launcher re-applies new RemoteViews over the old views and so keeps whatever
+ * colours an earlier theme set.
  */
 object Widgets {
     const val EXTRA_PLACE = "io.github.ramziag.weather.extra.PLACE"
@@ -35,20 +36,20 @@ object Widgets {
     private const val JOB_REFRESH = 7301
 
     /**
-     * Layout steps in dp. On Android 12+ the launcher picks the closest step that fits, so the steps form a
-     * full width x height lattice; Android 11 gets the same choice from [sizeFor].
+     * Layout steps: the smallest size in dp each one fits. STRIP needs more width than the other wide steps to
+     * fit its hours next to the city name.
      */
     enum class Size(val width: Int, val height: Int) {
-        COMPACT(110, 50), STRIP(250, 50), SQUARE(110, 200), WIDE(250, 200), TALL(110, 380), LARGE(250, 380)
+        COMPACT(110, 50), STRIP(300, 50), SQUARE(110, 200), WIDE(250, 200), TALL(110, 380), LARGE(250, 380)
     }
 
+    /**
+     * The step for a widget size, chosen the way Android 12+ launchers choose among sized RemoteViews: the
+     * closest step that fits, else the smallest. Android 11 uses this directly.
+     */
     fun sizeFor(widthDp: Int, heightDp: Int): Size {
-        val wide = widthDp >= 250
-        return when {
-            heightDp >= 380 -> if (wide) Size.LARGE else Size.TALL
-            heightDp >= 200 -> if (wide) Size.WIDE else Size.SQUARE
-            else -> if (wide) Size.STRIP else Size.COMPACT
-        }
+        fun distance(s: Size): Int = (widthDp - s.width).let { it * it } + (heightDp - s.height).let { it * it }
+        return Size.entries.filter { it.width <= widthDp && it.height <= heightDp }.minByOrNull(::distance) ?: Size.COMPACT
     }
 
     private val io = Executors.newSingleThreadExecutor()
@@ -62,6 +63,7 @@ object Widgets {
         io.execute {
             val ids = runCatching { ids(app) }.getOrDefault(IntArray(0))
             if (ids.isNotEmpty()) {
+                unpinRemoved(app, ids)
                 render(app, ids)
                 refreshIfStale(app, ids)
             }
@@ -109,7 +111,7 @@ object Widgets {
         place: Place,
         f: Forecast,
         fmt: Fmt,
-        palette: Palette?,
+        palette: Palette,
         open: PendingIntent,
     ): RemoteViews {
         val layout = when (size) {
@@ -138,17 +140,20 @@ object Widgets {
             secondary += R.id.updated
         }
 
+        // Set visibility both ways: a launcher re-applies a smaller step over a bigger one's views.
         val hourCount = when (size) {
-            Size.STRIP -> 4
+            Size.STRIP -> 3
             Size.WIDE, Size.LARGE -> 6
             else -> 0
         }
+        if (layout != R.layout.widget_narrow) v.setViewVisibility(R.id.hours, if (hourCount > 0) View.VISIBLE else View.GONE)
         if (hourCount > 0) {
-            v.setViewVisibility(R.id.hours, View.VISIBLE)
-            val hours = f.upcomingHours(hourCount)
+            // The strip already shows the current temperature big, so its hours start at the next one.
+            val showNow = size != Size.STRIP
+            val hours = f.upcomingHours(hourCount + 1).drop(if (showNow) 0 else 1)
             for (i in 0 until hourCount) {
                 val h = hours.getOrNull(i)
-                val now = i == 0
+                val now = showNow && i == 0
                 v.setTextViewText(HOUR_TIME[i], if (now) "Now" else h?.let { fmt.hour(it.time) } ?: "")
                 v.setTextViewText(HOUR_TEMP[i], if (now) fmt.temp(c.temp) else h?.let { fmt.temp(it.temp) } ?: "")
                 val icon = when {
@@ -168,8 +173,8 @@ object Widgets {
             Size.LARGE -> 4
             else -> 0
         }
+        if (layout != R.layout.widget_compact) v.setViewVisibility(R.id.days, if (dayCount > 0) View.VISIBLE else View.GONE)
         if (dayCount > 0) {
-            v.setViewVisibility(R.id.days, View.VISIBLE)
             val days = f.upcomingDays().drop(1).take(dayCount) // today is already on top
             val dayName = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
             for (i in 0 until dayCount) {
@@ -186,15 +191,15 @@ object Widgets {
             }
         }
 
-        palette?.apply(v, primary, secondary, icons)
+        palette.apply(v, primary, secondary, icons)
         v.setOnClickPendingIntent(android.R.id.background, open)
         return v
     }
 
-    private fun message(context: Context, text: Int, palette: Palette?, open: PendingIntent): RemoteViews {
+    private fun message(context: Context, text: Int, palette: Palette, open: PendingIntent): RemoteViews {
         val v = RemoteViews(context.packageName, R.layout.widget_message)
         v.setTextViewText(R.id.message, context.getString(text))
-        palette?.apply(v, listOf(R.id.message), emptyList(), emptyList())
+        palette.apply(v, listOf(R.id.message), emptyList(), emptyList())
         v.setOnClickPendingIntent(android.R.id.background, open)
         return v
     }
@@ -241,18 +246,26 @@ object Widgets {
         return ids.asList().mapNotNull { chosenPlace(context, it) ?: home }.distinct()
     }
 
+    /** Widgets set to a city that has since been removed from the app go back to the hometown. */
+    private fun unpinRemoved(context: Context, ids: IntArray) {
+        val kept = Store.get(context).allPlaces.toSet()
+        for (id in ids) if (chosenPlace(context, id)?.let { it !in kept } == true) choose(context, id, null)
+    }
+
     // ---- Background refresh ------------------------------------------------------------------------------
 
-    /** Starts [WidgetRefreshJob] if any widget's forecast is missing or older than [MAX_AGE_MS]. */
+    /** Whether [place]'s cached forecast is missing or older than [MAX_AGE_MS]. */
+    fun isStale(context: Context, place: Place): Boolean {
+        val fetchedAt = ForecastFiles.fetchedAt(ForecastFiles.file(context, place))
+        return fetchedAt == null || System.currentTimeMillis() - fetchedAt > MAX_AGE_MS
+    }
+
+    /** Starts [WidgetRefreshJob] if any widget's forecast is stale. */
     fun refreshIfStale(context: Context, ids: IntArray) {
-        val now = System.currentTimeMillis()
-        val stale = places(context, ids).any { place ->
-            val fetchedAt = ForecastFiles.fetchedAt(ForecastFiles.file(context, place))
-            fetchedAt == null || now - fetchedAt > MAX_AGE_MS
-        }
-        if (!stale) return
+        if (places(context, ids).none { isStale(context, it) }) return
         val jobs = context.getSystemService(JobScheduler::class.java) ?: return
-        // Re-scheduling an existing id would cancel a fetch that is already running.
+        // Re-scheduling an existing id would cancel a fetch that is already running; that job looks for newly
+        // stale places before it finishes instead.
         if (jobs.getPendingJob(JOB_REFRESH) != null) return
         // No network constraint: that would need an extra permission (ACCESS_NETWORK_STATE). The job simply
         // fails quietly when offline and the next 30-minute tick tries again.
@@ -265,21 +278,38 @@ object Widgets {
 
     // ---- Colours ----------------------------------------------------------------------------------------
 
-    /** Colours for a fixed theme; null for Auto, whose day/night colours come from @color resources. */
-    private class Palette(val bg: Int, val text: Int, val sub: Int) {
+    /**
+     * A theme's widget colours, as (background, text, secondary text). Auto has separate day and night
+     * colours, which Android 12+ launchers switch between themselves; Android 11 gets the current ones.
+     */
+    private class Palette(private val day: IntArray, private val night: IntArray) {
         fun apply(v: RemoteViews, primary: List<Int>, secondary: List<Int>, icons: List<Int>) {
-            v.setInt(R.id.widget_bg, "setColorFilter", bg)
-            primary.forEach { v.setTextColor(it, text) }
-            secondary.forEach { v.setTextColor(it, sub) }
-            icons.forEach { v.setInt(it, "setColorFilter", text) }
+            set(v, R.id.widget_bg, "setColorFilter", BG)
+            primary.forEach { set(v, it, "setTextColor", TEXT) }
+            secondary.forEach { set(v, it, "setTextColor", SUB) }
+            icons.forEach { set(v, it, "setColorFilter", TEXT) }
+        }
+
+        private fun set(v: RemoteViews, id: Int, method: String, i: Int) {
+            if (Build.VERSION.SDK_INT >= 31) v.setColorInt(id, method, day[i], night[i]) else v.setInt(id, method, day[i])
         }
 
         companion object {
-            fun of(context: Context, theme: Int): Palette? {
-                if (theme == 0) return null
-                val t = ContextThemeWrapper(context, Themes.style(theme, context.resources.configuration)).theme
-                fun color(attr: Int) = TypedValue().also { t.resolveAttribute(attr, it, true) }.data
-                return Palette(color(R.attr.wBg), color(R.attr.wText), color(R.attr.wSub))
+            private const val BG = 0
+            private const val TEXT = 1
+            private const val SUB = 2
+
+            fun of(context: Context, theme: Int): Palette {
+                fun colors(style: Int): IntArray {
+                    val t = ContextThemeWrapper(context, style).theme
+                    fun color(attr: Int) = TypedValue().also { t.resolveAttribute(attr, it, true) }.data
+                    return intArrayOf(color(R.attr.wBg), color(R.attr.wText), color(R.attr.wSub))
+                }
+                if (theme == 0 && Build.VERSION.SDK_INT >= 31) {
+                    return Palette(colors(R.style.Theme_Weather_Sky), colors(R.style.Theme_Weather_Dusk))
+                }
+                val c = colors(Themes.style(theme, context.resources.configuration))
+                return Palette(c, c)
             }
         }
     }

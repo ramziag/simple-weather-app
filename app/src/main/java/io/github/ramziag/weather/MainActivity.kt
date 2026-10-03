@@ -609,6 +609,7 @@ class MainActivity : Activity(), Repo.Listener {
                         store.cities = list - p
                         repo.forget(p)
                         if (viewing == p) setPlace(null)
+                        Widgets.update(this) // widgets set to this city go back to the hometown
                     }
                 }
                 dirty[TAB_CITIES] = true

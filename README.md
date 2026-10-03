@@ -49,7 +49,8 @@ Touch & hold the home screen → **Widgets** → **Weather**. It opens at 4×2 a
 beyond: the current conditions always, the next hours when it's wide, the next days when it's tall.
 
 - Shows your hometown. To show a saved city instead, touch & hold the widget and pick **Reconfigure** (on
-  Android 11 you choose when placing it). Tapping it opens the app on that city.
+  Android 11 you choose when placing it). Tapping it opens the app on that city. Removing the city from the
+  app puts the widget back on your hometown.
 - Refreshes about every 30 minutes (the shortest interval Android allows for widgets; it pauses while the phone
   is in deep sleep) and straight away whenever the app fetches new data. No extra permissions.
 - Uses the app's theme; with **Auto** it follows the system's light/dark mode.

@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
@@ -16,6 +17,7 @@ import android.widget.TextView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -55,6 +57,9 @@ class WidgetTest {
     fun sizeSteps() {
         for ((size, cell) in cells) assertEquals(size, Widgets.sizeFor(cell.first, cell.second))
         assertEquals(Widgets.Size.SQUARE, Widgets.sizeFor(237, 292)) // 3x2
+        assertEquals(Widgets.Size.WIDE, Widgets.sizeFor(280, 292))
+        assertEquals(Widgets.Size.COMPACT, Widgets.sizeFor(280, 146)) // too narrow for the strip's hours
+        assertEquals(Widgets.Size.WIDE, Widgets.sizeFor(600, 292))
         assertEquals(Widgets.Size.COMPACT, Widgets.sizeFor(0, 0)) // size not reported yet
     }
 
@@ -78,7 +83,8 @@ class WidgetTest {
                 val wantDays = size in setOf(Widgets.Size.TALL, Widgets.Size.LARGE)
                 assertEquals("$size hours", wantHours, hours?.visibility == View.VISIBLE)
                 assertEquals("$size days", wantDays, days?.visibility == View.VISIBLE)
-                if (wantHours) assertEquals("Now", view.findViewById<TextView>(R.id.h0_time).text.toString())
+                // The strip shows the current temperature big already, so its hours start at the next one.
+                if (wantHours) assertEquals(size != Widgets.Size.STRIP, view.findViewById<TextView>(R.id.h0_time).text.toString() == "Now")
                 if (theme == 0 || size == Widgets.Size.WIDE || size == Widgets.Size.LARGE) shot(view, "w-$label-${size.name.lowercase()}")
             }
         }
@@ -100,12 +106,52 @@ class WidgetTest {
         val mgr = shadowOf(AppWidgetManager.getInstance(app))
         mgr.createWidgets(WeatherWidget::class.java, R.layout.widget_message, 2)
         Widgets.refreshIfStale(app, Widgets.ids(app))
-        assertEquals(1, jobs().allPendingJobs.size)
         val job = jobs().allPendingJobs.single()
         assertEquals(WidgetRefreshJob::class.java.name, job.service.className)
         // Calling again while one is pending must not replace (and so cancel) it.
         Widgets.refreshIfStale(app, Widgets.ids(app))
-        assertEquals(1, jobs().allPendingJobs.size)
+        assertSame(job, jobs().allPendingJobs.single())
+    }
+
+    /** Launchers re-apply new RemoteViews over the old views when the layout is the same. */
+    @Test
+    fun shrinkingAWidgetHidesRowsThatNoLongerFit() {
+        TestData.seed(app, theme = 1)
+        val forecast = ForecastFiles.read(ForecastFiles.file(app, TestData.home))!!
+        val host = app.createPackageContext(app.packageName, 0)
+        for ((big, small) in listOf(Widgets.Size.LARGE to Widgets.Size.WIDE, Widgets.Size.TALL to Widgets.Size.SQUARE, Widgets.Size.STRIP to Widgets.Size.COMPACT)) {
+            val view = inflateLikeALauncher(Widgets.preview(app, big, TestData.home, forecast), big)
+            Widgets.preview(app, small, TestData.home, forecast).reapply(host, view)
+            val visible = { id: Int -> view.findViewById<View>(id)?.visibility == View.VISIBLE }
+            assertEquals("$big → $small hours", small == Widgets.Size.WIDE, visible(R.id.hours))
+            assertEquals("$big → $small days", false, visible(R.id.days))
+        }
+    }
+
+    @Test
+    fun coloursFollowTheThemeAndAutoFollowsNightMode() {
+        TestData.seed(app, theme = 3) // Peach
+        val forecast = ForecastFiles.read(ForecastFiles.file(app, TestData.home))!!
+        val host = app.createPackageContext(app.packageName, 0)
+        val view = inflateLikeALauncher(Widgets.preview(app, Widgets.Size.WIDE, TestData.home, forecast), Widgets.Size.WIDE)
+        val temp = view.findViewById<TextView>(R.id.temp)
+        assertEquals(0xFF36261E.toInt(), temp.currentTextColor)
+
+        // Back to Auto: the Peach colours must not stay behind on the re-applied views.
+        Store.get(app).theme = 0
+        Widgets.preview(app, Widgets.Size.WIDE, TestData.home, forecast).reapply(host, view)
+        assertEquals(0xFF1F2D3A.toInt(), temp.currentTextColor) // Sky
+
+        // A launcher in dark mode picks the night colours from the same RemoteViews.
+        val dark = Configuration(app.resources.configuration).apply {
+            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or Configuration.UI_MODE_NIGHT_YES
+        }
+        val night = inflateLikeALauncher(
+            Widgets.preview(app, Widgets.Size.WIDE, TestData.home, forecast),
+            Widgets.Size.WIDE,
+            host.createConfigurationContext(dark),
+        )
+        assertEquals(0xFFECEEF7.toInt(), night.findViewById<TextView>(R.id.temp).currentTextColor) // Dusk
     }
 
     @Test
@@ -181,8 +227,11 @@ class WidgetTest {
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     /** A package context has the platform default theme, not ours: like the launcher's view of our layouts. */
-    private fun inflateLikeALauncher(views: android.widget.RemoteViews, size: Widgets.Size): View {
-        val host = app.createPackageContext(app.packageName, 0)
+    private fun inflateLikeALauncher(
+        views: android.widget.RemoteViews,
+        size: Widgets.Size,
+        host: Context = app.createPackageContext(app.packageName, 0),
+    ): View {
         val view = views.apply(host, FrameLayout(host))
         val (w, h) = cells.getValue(size).let { (wDp, hDp) -> px(wDp) to px(hDp) }
         view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
