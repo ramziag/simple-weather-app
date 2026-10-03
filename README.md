@@ -55,6 +55,13 @@ beyond: the current conditions always, the next hours when it's wide, the next d
   is in deep sleep) and straight away whenever the app fetches new data. No extra permissions.
 - Uses the app's theme; with **Auto** it follows the system's light/dark mode.
 
+<p>
+  <img src="docs/screenshots/w-auto-square.png" width="120" alt="Widget at 2×1">
+  <img src="docs/screenshots/w-auto-strip.png" width="225" alt="Widget at 4×1">
+  <img src="docs/screenshots/w-auto-wide.png" width="225" alt="Widget at 4×2">
+  <img src="docs/screenshots/w-dusk-large.png" width="225" alt="Widget at 4×3 in the Dusk theme">
+</p>
+
 ## Getting the APK
 
 Every push builds a signed release APK in GitHub Actions.
