@@ -4,9 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
@@ -34,8 +34,8 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private val base = TileCache(context, 24 shl 20)
     private val radar = TileCache(context, 64 shl 20)
 
-    /** On-screen size of a 512 px base tile at an exact zoom level. */
-    private val tilePx = 192 * resources.displayMetrics.density
+    /** On-screen size of a 256 px map tile at an exact zoom level (256 dp keeps OSM's labels readable). */
+    private val tilePx = 256 * resources.displayMetrics.density
 
     private val bg: Int
     private val dark: Boolean
@@ -78,8 +78,7 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         dark = Color.luminance(bg) < 0.4f
         markerFill.color = themeColor(R.attr.wAccent)
         markerRing.color = themeColor(R.attr.wText)
-        // Wash the grey light map toward the theme's pastel background.
-        if (!dark) basePaint.colorFilter = PorterDuffColorFilter(blend(Color.WHITE, bg, 0.6f), PorterDuff.Mode.MULTIPLY)
+        basePaint.colorFilter = ColorMatrixColorFilter(mapStyle(dark, bg))
         base.onLoaded = { invalidate() }
         radar.onLoaded = { invalidate() }
     }
@@ -175,7 +174,7 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
             }
         }
         forEachTile(tileZoom) { x, y ->
-            val tile = base.request(Radar.baseTileUrl(dark, tileZoom, x, y))
+            val tile = base.request(Radar.baseTileUrl(tileZoom, x, y))
             if (tile != null) canvas.drawBitmap(tile, null, dst, basePaint) else drawParent(canvas, tileZoom, x, y)
         }
         if (m != null && current != null) {
@@ -200,7 +199,7 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         for (up in 1..4) {
             val pz = z - up
             if (pz < 0) return
-            val parent: Bitmap = base.get(Radar.baseTileUrl(dark, pz, x shr up, y shr up)) ?: continue
+            val parent: Bitmap = base.get(Radar.baseTileUrl(pz, x shr up, y shr up)) ?: continue
             val part = parent.width shr up
             val sx = (x - ((x shr up) shl up)) * part
             val sy = (y - ((y shr up) shl up)) * part
@@ -316,6 +315,23 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         return tv.data
     }
 
+    /**
+     * Calms OSM's colourful style down to the app's look: muted and tinted toward the theme background, or
+     * for dark themes inverted with hues turned back round (so water stays blue) and dimmed.
+     */
+    private fun mapStyle(dark: Boolean, bg: Int): ColorMatrix {
+        val m = ColorMatrix()
+        if (dark) {
+            m.postConcat(ColorMatrix(floatArrayOf(-1f, 0f, 0f, 0f, 255f, 0f, -1f, 0f, 0f, 255f, 0f, 0f, -1f, 0f, 255f, 0f, 0f, 0f, 1f, 0f)))
+            m.postConcat(HUE_180)
+        }
+        m.postConcat(ColorMatrix().apply { setSaturation(if (dark) 0.35f else 0.45f) })
+        val tint = blend(Color.WHITE, bg, if (dark) 0.35f else 0.5f)
+        val k = if (dark) 0.8f else 1f
+        m.postConcat(ColorMatrix().apply { setScale(k * Color.red(tint) / 255f, k * Color.green(tint) / 255f, k * Color.blue(tint) / 255f, 1f) })
+        return m
+    }
+
     private fun blend(a: Int, b: Int, f: Float): Int = Color.rgb(
         (Color.red(a) * (1 - f) + Color.red(b) * f).roundToInt(),
         (Color.green(a) * (1 - f) + Color.green(b) * f).roundToInt(),
@@ -329,5 +345,15 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         const val FRAME_MS = 500L
         const val HOLD_LAST_MS = 1500L
         const val MAX_WAIT_MS = 3000
+
+        /** Hue rotation by 180° (the W3C feColorMatrix hueRotate formula). */
+        val HUE_180 = ColorMatrix(
+            floatArrayOf(
+                -0.574f, 1.430f, 0.144f, 0f, 0f,
+                0.426f, 0.430f, 0.144f, 0f, 0f,
+                0.426f, 1.430f, -0.856f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        )
     }
 }

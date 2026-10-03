@@ -25,8 +25,7 @@ class RadarTest {
     fun tileUrls() {
         val f = maps.frames.last()
         assertEquals("https://tilecache.rainviewer.com${f.path}/256/7/68/41/2/1_1.png", Radar.radarTileUrl(maps, f, 7, 68, 41))
-        assertEquals("https://a.basemaps.cartocdn.com/light_all/7/68/40@2x.png", Radar.baseTileUrl(false, 7, 68, 40))
-        assertEquals("https://b.basemaps.cartocdn.com/dark_all/7/68/41@2x.png", Radar.baseTileUrl(true, 7, 68, 41))
+        assertEquals("https://tile.openstreetmap.org/7/68/41.png", Radar.baseTileUrl(7, 68, 41))
     }
 
     @Test

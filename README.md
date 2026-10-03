@@ -5,11 +5,11 @@ an animated precipitation radar, and a list of saved cities. Pastel themes, line
 
 - **No API key, no account.** Forecasts come from [Open-Meteo](https://open-meteo.com) (free, CC BY 4.0);
   radar from [RainViewer](https://www.rainviewer.com/api.html) (free for personal use) over
-  [CARTO](https://carto.com/basemaps) map tiles (© OpenStreetMap contributors).
+  [OpenStreetMap](https://www.openstreetmap.org/copyright) map tiles.
 - **No location permission.** You pick your hometown by name or postal code; it's remembered on the device.
 - **One permission:** Internet. Forecasts and city searches go to `open-meteo.com`. Only when you open the
-  Radar tab, the app also fetches radar frames from `rainviewer.com` and map tiles from `basemaps.cartocdn.com`
-  (those reveal roughly which area you're looking at). Nothing else.
+  Radar tab, the app also fetches radar frames from `rainviewer.com` and map tiles from
+  `tile.openstreetmap.org` (those reveal roughly which area you're looking at). Nothing else.
 - **Tiny and quick:** plain Android framework views, no libraries, no Google Play Services. Forecasts are
   cached, so the app opens instantly (and works offline with the last data) and refreshes when the data is
   older than 15 minutes.

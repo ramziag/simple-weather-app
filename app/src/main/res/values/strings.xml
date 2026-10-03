@@ -35,7 +35,7 @@
     <string name="radar_map">Precipitation radar map. Drag to move, pinch to zoom.</string>
     <string name="radar_subtitle">Rain &amp; snow · past 2 hours</string>
     <string name="radar_loading">Loading radar…</string>
-    <string name="radar_credit">Map © OpenStreetMap contributors © CARTO · Radar © RainViewer</string>
+    <string name="radar_credit">Map © OpenStreetMap contributors · Radar © RainViewer</string>
     <string name="zoom_in">Zoom in</string>
     <string name="zoom_out">Zoom out</string>
     <string name="recenter">Back to city</string>

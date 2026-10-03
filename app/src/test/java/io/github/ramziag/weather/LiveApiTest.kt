@@ -46,8 +46,8 @@ class LiveApiTest {
         val y = (Radar.mercatorY(berlin.lat) * (1 shl z)).toInt()
         assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.last(), z, x, y)))
         assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.first(), z - 2, x shr 2, y shr 2)))
-        assertPng(Http.bytes(Radar.baseTileUrl(dark = false, z = z, x = x, y = y)))
-        assertPng(Http.bytes(Radar.baseTileUrl(dark = true, z = 10, x = x shl 3, y = y shl 3)))
+        assertPng(Http.bytes(Radar.baseTileUrl(z, x, y)))
+        assertPng(Http.bytes(Radar.baseTileUrl(10, x shl 3, y shl 3)))
     }
 
     private fun assertPng(bytes: ByteArray) {

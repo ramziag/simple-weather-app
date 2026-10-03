@@ -8,7 +8,8 @@ import kotlin.math.tan
 
 /**
  * Precipitation radar from RainViewer (https://www.rainviewer.com/api.html; free for personal use, no key)
- * drawn over CARTO base map tiles (© OpenStreetMap contributors, © CARTO). Pure JVM so it can be unit tested.
+ * drawn over standard OpenStreetMap tiles (no key; the app identifies itself, caches tiles and shows the
+ * attribution, as the OSM tile usage policy asks). Pure JVM so it can be unit tested.
  */
 object Radar {
     const val MAPS_URL = "https://api.rainviewer.com/public/weather-maps.json"
@@ -40,12 +41,8 @@ object Radar {
     fun radarTileUrl(maps: Maps, frame: Frame, z: Int, x: Int, y: Int) =
         "${maps.host}${frame.path}/256/$z/$x/$y/2/1_1.png"
 
-    /** Retina (512 px) CARTO base map tile, light or dark to match the theme. */
-    fun baseTileUrl(dark: Boolean, z: Int, x: Int, y: Int): String {
-        val server = "abcd"[Math.floorMod(x + y, 4)]
-        val style = if (dark) "dark_all" else "light_all"
-        return "https://$server.basemaps.cartocdn.com/$style/$z/$x/$y@2x.png"
-    }
+    /** 256 px OpenStreetMap base map tile. */
+    fun baseTileUrl(z: Int, x: Int, y: Int) = "https://tile.openstreetmap.org/$z/$x/$y.png"
 
     // Web Mercator, as fractions of the world square: x in 0..1 west to east, y in 0..1 north to south.
 
