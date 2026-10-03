@@ -5,6 +5,7 @@
     <string name="tab_now">Now</string>
     <string name="tab_hourly">Hourly</string>
     <string name="tab_daily">10-Day</string>
+    <string name="tab_radar">Radar</string>
     <string name="tab_cities">Cities</string>
 
     <string name="units">Switch units</string>
@@ -30,6 +31,16 @@
     <string name="search_help">Tip: add a state or country to narrow it down, e.g. “Portland, OR” or “Paris, FR”.</string>
     <string name="searching">Searching…</string>
     <string name="no_matches">No matches</string>
+
+    <string name="radar_map">Precipitation radar map. Drag to move, pinch to zoom.</string>
+    <string name="radar_subtitle">Rain &amp; snow · past 2 hours</string>
+    <string name="radar_loading">Loading radar…</string>
+    <string name="radar_credit">Map © OpenStreetMap contributors © CARTO · Radar © RainViewer</string>
+    <string name="zoom_in">Zoom in</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="recenter">Back to city</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
 
     <string name="make_hometown">Make hometown</string>
     <string name="move_up">Move up</string>

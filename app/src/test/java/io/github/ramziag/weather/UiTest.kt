@@ -108,6 +108,24 @@ class UiTest {
         shot(a, "7-dusk-now")
         a.click(R.id.tab_daily)
         shot(a, "8-dusk-daily")
+        a.click(R.id.tab_radar)
+        loadRadar(a)
+        shot(a, "11-dusk-radar")
+    }
+
+    @Test
+    fun radar() {
+        seed(theme = 1)
+        val a = launch()
+        a.click(R.id.tab_radar)
+        assertEquals(View.VISIBLE, a.findViewById<View>(R.id.page_radar).visibility)
+        assertEquals("Springfield", a.text(R.id.title))
+        loadRadar(a)
+        if (Repo.get(a).radarMaps != null) assertTrue(a.text(R.id.radar_time).contains(" · "))
+        shot(a, "10-radar")
+        a.click(R.id.radar_zoom_out)
+        a.click(R.id.tab_now)
+        assertEquals(View.GONE, a.findViewById<View>(R.id.page_radar).visibility)
     }
 
     @Test
@@ -185,9 +203,24 @@ class UiTest {
 
     private fun Activity.text(id: Int) = findViewById<TextView>(id).text.toString()
 
+    /** Fetches radar frames and, by drawing a few times, the visible tiles (real network in CI). */
+    private fun loadRadar(a: Activity) {
+        waitFor(timeoutMs = 15_000) { Repo.get(a).radarMaps != null }
+        repeat(24) {
+            draw(a)
+            Thread.sleep(250)
+            idle()
+        }
+    }
+
     private fun shot(a: Activity, name: String) {
         idle()
         val dir = shots ?: return
+        val bitmap = draw(a)
+        FileOutputStream(File(dir, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    private fun draw(a: Activity): Bitmap {
         val dm = a.resources.displayMetrics
         val root = a.window.decorView
         root.measure(
@@ -197,6 +230,6 @@ class UiTest {
         root.layout(0, 0, dm.widthPixels, dm.heightPixels)
         val bitmap = Bitmap.createBitmap(dm.widthPixels, dm.heightPixels, Bitmap.Config.ARGB_8888)
         root.draw(Canvas(bitmap))
-        FileOutputStream(File(dir, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return bitmap
     }
 }

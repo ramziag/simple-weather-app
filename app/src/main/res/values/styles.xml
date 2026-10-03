@@ -33,6 +33,13 @@
         <item name="android:scaleType">center</item>
     </style>
 
+    <style name="MapButton">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:scaleType">center</item>
+    </style>
+
     <style name="PillButton">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">48dp</item>

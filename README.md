@@ -1,12 +1,15 @@
 # Weather
 
 A small, fast Android weather app: current conditions for your hometown, hourly and 10-day forecasts,
-and a list of saved cities. Pastel themes, line icons, no clutter.
+an animated precipitation radar, and a list of saved cities. Pastel themes, line icons, no clutter.
 
-- **No API key, no account.** Data comes from [Open-Meteo](https://open-meteo.com) (free, CC BY 4.0).
+- **No API key, no account.** Forecasts come from [Open-Meteo](https://open-meteo.com) (free, CC BY 4.0);
+  radar from [RainViewer](https://www.rainviewer.com/api.html) (free for personal use) over
+  [CARTO](https://carto.com/basemaps) map tiles (© OpenStreetMap contributors).
 - **No location permission.** You pick your hometown by name or postal code; it's remembered on the device.
-- **One permission:** Internet (forecast requests go to `api.open-meteo.com` and city searches to
-  `geocoding-api.open-meteo.com`, nothing else).
+- **One permission:** Internet. Forecasts and city searches go to `open-meteo.com`. Only when you open the
+  Radar tab, the app also fetches radar frames from `rainviewer.com` and map tiles from `basemaps.cartocdn.com`
+  (those reveal roughly which area you're looking at). Nothing else.
 - **Tiny and quick:** plain Android framework views, no libraries, no Google Play Services. Forecasts are
   cached, so the app opens instantly (and works offline with the last data) and refreshes when the data is
   older than 15 minutes.
@@ -29,6 +32,7 @@ and a list of saved cities. Pastel themes, line icons, no clutter.
 | **Now** | Hometown conditions, next 24 hours, wind/humidity/UV/pressure/sunrise/sunset |
 | **Hourly** | Next 48 hours, grouped by day |
 | **10-Day** | Daily highs/lows on a shared scale; tap a day for details |
+| **Radar** | Rain & snow over the past ~2 hours, animated. Drag, pinch or double-tap to zoom; ◎ recentres |
 | **Cities** | Hometown + saved cities. Tap to view one; touch & hold to make it your hometown, reorder or remove |
 
 Header buttons: **°F/°C** switches units instantly, **◐** picks a theme (Sky, Mint, Peach, Lavender, Rose,
@@ -77,8 +81,10 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 All code is in `app/src/main/java/io/github/ramziag/weather/`:
 
 - `MainActivity.kt` — the single screen: header, tabs, pages, search.
-- `OpenMeteo.kt` — API URLs, HTTP and JSON parsing (pure JVM, unit tested).
+- `OpenMeteo.kt` — forecast and search URLs and JSON parsing (pure JVM, unit tested).
+- `Radar.kt`, `RadarView.kt`, `TileCache.kt` — radar frames and tile URLs, the map view (pan/zoom/animation),
+  and the tile memory cache (backed by Android's HTTP disk cache).
 - `Repo.kt` — memory + disk cache and background loading.
 - `Store.kt` — saved hometown, cities, units and theme; theme list.
-- `Forecast.kt`, `Place.kt`, `Fmt.kt`, `Wmo.kt`, `RangeBar.kt` — models, formatting, weather codes, the
-  10-day temperature bar.
+- `Forecast.kt`, `Place.kt`, `Fmt.kt`, `Wmo.kt`, `RangeBar.kt`, `Http.kt` — models, formatting, weather
+  codes, the 10-day temperature bar, HTTP helper.

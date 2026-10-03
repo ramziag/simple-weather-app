@@ -20,6 +20,7 @@ class Repo private constructor(context: Context) {
     interface Listener {
         fun onForecast(place: Place, forecast: Forecast?, error: String?)
         fun onSummaries(error: String?)
+        fun onRadar(error: String?)
     }
 
     var listener: Listener? = null
@@ -34,6 +35,11 @@ class Repo private constructor(context: Context) {
     private val busy = HashSet<String>()
     private var summariesBusy = false
     private var summariesFromDisk = false
+    private var radarBusy = false
+
+    /** Latest list of radar frames (memory only; it's tiny and goes stale in minutes). */
+    var radarMaps: Radar.Maps? = null
+        private set
 
     fun cached(place: Place): Forecast? = forecasts[place.key]
 
@@ -111,6 +117,27 @@ class Repo private constructor(context: Context) {
                 main.post {
                     summariesBusy = false
                     listener?.onSummaries(describe(e))
+                }
+            }
+        }
+    }
+
+    fun loadRadar(force: Boolean) {
+        val current = radarMaps
+        if (radarBusy || (!force && current != null && current.isFresh())) return
+        radarBusy = true
+        io.execute {
+            try {
+                val maps = Radar.fetch()
+                main.post {
+                    radarBusy = false
+                    radarMaps = maps
+                    listener?.onRadar(null)
+                }
+            } catch (e: Exception) {
+                main.post {
+                    radarBusy = false
+                    listener?.onRadar(describe(e))
                 }
             }
         }

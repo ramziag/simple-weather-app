@@ -19,10 +19,12 @@ import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.widget.BaseAdapter
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -31,8 +33,8 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
 /**
- * The whole app is this one screen: a header, four tab pages (Now, Hourly, 10-Day, Cities) and a search
- * page. Plain framework views only, so it starts fast and the APK stays tiny.
+ * The whole app is this one screen: a header, five tab pages (Now, Hourly, 10-Day, Radar, Cities) and a
+ * search page. Plain framework views only, so it starts fast and the APK stays tiny.
  */
 class MainActivity : Activity(), Repo.Listener {
 
@@ -50,7 +52,7 @@ class MainActivity : Activity(), Repo.Listener {
     private lateinit var backHome: View
     private lateinit var status: TextView
     private lateinit var tabs: LinearLayout
-    private lateinit var pages: Array<ScrollView>
+    private lateinit var pages: Array<View>
     private lateinit var tabViews: Array<View>
     private lateinit var pageSearch: View
     private lateinit var searchInput: EditText
@@ -67,6 +69,11 @@ class MainActivity : Activity(), Repo.Listener {
     private lateinit var hourlyList: LinearLayout
     private lateinit var dailyList: LinearLayout
     private lateinit var citiesList: LinearLayout
+    private lateinit var radarView: RadarView
+    private lateinit var radarPlay: ImageButton
+    private lateinit var radarSeek: SeekBar
+    private lateinit var radarTime: TextView
+    private lateinit var radarStatus: TextView
 
     private var colorText = 0
     private var colorSub = 0
@@ -76,11 +83,13 @@ class MainActivity : Activity(), Repo.Listener {
     private var forecast: Forecast? = null
     private var error: String? = null
     private var citiesError: String? = null
+    private var radarError: String? = null
+    private var radarAutoPlay = true
     private var refreshing = false
     private var renderedHour: LocalDateTime? = null
 
     /** Pages whose views are out of date; rebuilt lazily when shown. */
-    private val dirty = BooleanArray(4) { true }
+    private val dirty = BooleanArray(5) { true }
 
     private var searchMode = SEARCH_NONE
     private var searchSeq = 0
@@ -124,12 +133,14 @@ class MainActivity : Activity(), Repo.Listener {
             findViewById(R.id.page_now),
             findViewById(R.id.page_hourly),
             findViewById(R.id.page_daily),
+            findViewById(R.id.page_radar),
             findViewById(R.id.page_cities),
         )
         tabViews = arrayOf(
             findViewById(R.id.tab_now),
             findViewById(R.id.tab_hourly),
             findViewById(R.id.tab_daily),
+            findViewById(R.id.tab_radar),
             findViewById(R.id.tab_cities),
         )
         pageSearch = findViewById(R.id.page_search)
@@ -146,10 +157,16 @@ class MainActivity : Activity(), Repo.Listener {
         hourlyList = findViewById(R.id.hourly_list)
         dailyList = findViewById(R.id.daily_list)
         citiesList = findViewById(R.id.cities_list)
+        radarView = findViewById(R.id.radar_map)
+        radarPlay = findViewById(R.id.radar_play)
+        radarSeek = findViewById(R.id.radar_seek)
+        radarTime = findViewById(R.id.radar_time)
+        radarStatus = findViewById(R.id.radar_status)
 
         setupInsets()
         setupTabs()
         setupSearch()
+        setupRadar()
         units.setOnClickListener { toggleUnits() }
         findViewById<View>(R.id.theme).setOnClickListener { pickTheme() }
         refresh.setOnClickListener { reload(force = true) }
@@ -179,11 +196,22 @@ class MainActivity : Activity(), Repo.Listener {
             render()
         }
         handler.post(ticker)
+        if (tab == TAB_RADAR) {
+            radarAutoPlay = true
+            render()
+        }
     }
 
     override fun onPause() {
         handler.removeCallbacks(ticker)
+        radarView.pause()
+        TileCache.flush()
         super.onPause()
+    }
+
+    override fun onStop() {
+        radarView.trim()
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -210,6 +238,7 @@ class MainActivity : Activity(), Repo.Listener {
             } else {
                 renderHeader()
             }
+            if (tab == TAB_RADAR) updateRadarLabel()
             handler.postDelayed(this, 60_000)
         }
     }
@@ -225,6 +254,7 @@ class MainActivity : Activity(), Repo.Listener {
         }
         p?.let { repo.loadForecast(it, force) }
         if (cities) repo.loadSummaries(store.allPlaces, force)
+        if (tab == TAB_RADAR && p != null) repo.loadRadar(force)
     }
 
     override fun onForecast(place: Place, forecast: Forecast?, error: String?) {
@@ -242,6 +272,12 @@ class MainActivity : Activity(), Repo.Listener {
         if (tab == TAB_CITIES) refreshing = false
         citiesError = error
         dirty[TAB_CITIES] = true
+        render()
+    }
+
+    override fun onRadar(error: String?) {
+        if (tab == TAB_RADAR) refreshing = false
+        radarError = error
         render()
     }
 
@@ -271,6 +307,11 @@ class MainActivity : Activity(), Repo.Listener {
     // ---- Rendering -------------------------------------------------------------------------------------
 
     private fun showTab(t: Int) {
+        if (tab == TAB_RADAR && t != TAB_RADAR) {
+            radarView.pause()
+            radarView.trim()
+        }
+        if (t == TAB_RADAR && tab != TAB_RADAR) radarAutoPlay = true
         tab = t
         tabViews.forEachIndexed { i, v ->
             val on = i == t
@@ -284,6 +325,7 @@ class MainActivity : Activity(), Repo.Listener {
             v.isSelected = on
         }
         if (t == TAB_CITIES) repo.loadSummaries(store.allPlaces, false)
+        if (t == TAB_RADAR) repo.loadRadar(false)
         render()
         syncBack()
     }
@@ -296,6 +338,7 @@ class MainActivity : Activity(), Repo.Listener {
         val message = when {
             tab == TAB_CITIES -> null
             p == null -> if (tab == TAB_NOW) null else getString(R.string.no_hometown)
+            tab == TAB_RADAR -> null
             f == null -> error ?: getString(R.string.loading)
             else -> null
         }
@@ -303,6 +346,10 @@ class MainActivity : Activity(), Repo.Listener {
         status.visibility = if (message != null) View.VISIBLE else View.GONE
         pages.forEachIndexed { i, page -> page.visibility = if (i == tab && message == null) View.VISIBLE else View.GONE }
         if (message != null) return
+        if (tab == TAB_RADAR) {
+            renderRadar()
+            return
+        }
         if (tab == TAB_NOW) {
             nowEmpty.visibility = if (p == null) View.VISIBLE else View.GONE
             nowContent.visibility = if (p == null) View.GONE else View.VISIBLE
@@ -337,6 +384,7 @@ class MainActivity : Activity(), Repo.Listener {
             searching -> ""
             refreshing -> "Updating…"
             tab == TAB_CITIES -> citiesError ?: getString(R.string.cities_hint)
+            tab == TAB_RADAR -> radarError ?: getString(R.string.radar_subtitle)
             else -> placeStatus()
         }
         subtitle.visibility = if (subtitle.text.isEmpty()) View.GONE else View.VISIBLE
@@ -444,6 +492,44 @@ class MainActivity : Activity(), Repo.Listener {
         }
     }
 
+    private fun renderRadar() {
+        val p = place ?: return
+        radarView.setPlace(p.lat, p.lon)
+        val maps = repo.radarMaps
+        radarView.maps = maps
+        val n = maps?.frames?.size ?: 0
+        radarSeek.max = maxOf(0, n - 1)
+        radarSeek.isEnabled = n > 1
+        radarPlay.isEnabled = n > 1
+        updateRadarLabel()
+        val message = when {
+            maps == null -> radarError ?: getString(R.string.radar_loading)
+            n == 0 -> "No radar frames available right now"
+            else -> null
+        }
+        radarStatus.text = message
+        radarStatus.visibility = if (message != null) View.VISIBLE else View.GONE
+        if (radarAutoPlay) radarView.play()
+    }
+
+    /** "20 min ago · 2:40 PM" for the frame on screen. */
+    private fun updateRadarLabel() {
+        val frame = repo.radarMaps?.frames?.getOrNull(radarView.frame)
+        radarSeek.progress = maxOf(0, radarView.frame)
+        if (frame == null) {
+            radarTime.text = ""
+            return
+        }
+        val millis = frame.time * 1000
+        val minutes = ((System.currentTimeMillis() - millis) / 60_000).coerceAtLeast(0)
+        val ago = when {
+            minutes < 1 -> "Just now"
+            minutes < 60 -> "$minutes min ago"
+            else -> "${minutes / 60} h ${minutes % 60} min ago"
+        }
+        radarTime.text = "$ago · ${fmt.clock(millis)}"
+    }
+
     private fun renderCities() {
         citiesList.removeAllViews()
         val home = store.home
@@ -538,6 +624,7 @@ class MainActivity : Activity(), Repo.Listener {
 
     private fun openSearch(mode: Int) {
         searchMode = mode
+        radarView.pause()
         searchInput.setText("")
         handler.removeCallbacks(searchRunnable)
         searchSeq++
@@ -690,13 +777,49 @@ class MainActivity : Activity(), Repo.Listener {
     }
 
     private fun setupTabs() {
-        val icons = intArrayOf(R.drawable.ic_now, R.drawable.ic_hourly, R.drawable.ic_daily, R.drawable.ic_cities)
-        val labels = intArrayOf(R.string.tab_now, R.string.tab_hourly, R.string.tab_daily, R.string.tab_cities)
+        val icons = intArrayOf(R.drawable.ic_now, R.drawable.ic_hourly, R.drawable.ic_daily, R.drawable.ic_radar, R.drawable.ic_cities)
+        val labels = intArrayOf(R.string.tab_now, R.string.tab_hourly, R.string.tab_daily, R.string.tab_radar, R.string.tab_cities)
         tabViews.forEachIndexed { i, v ->
             v.findViewById<ImageView>(R.id.tab_icon).setImageResource(icons[i])
             v.findViewById<TextView>(R.id.tab_label).setText(labels[i])
-            v.setOnClickListener { if (tab == i) pages[i].smoothScrollTo(0, 0) else showTab(i) }
+            v.setOnClickListener {
+                when {
+                    tab != i -> showTab(i)
+                    i == TAB_RADAR -> radarView.recenter()
+                    else -> (pages[i] as ScrollView).smoothScrollTo(0, 0)
+                }
+            }
         }
+    }
+
+    private fun setupRadar() {
+        radarView.onFrameChanged = { updateRadarLabel() }
+        radarView.onPlayingChanged = { playing ->
+            radarPlay.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+            radarPlay.contentDescription = getString(if (playing) R.string.pause else R.string.play)
+        }
+        radarPlay.setOnClickListener {
+            if (radarView.playing) {
+                radarAutoPlay = false
+                radarView.pause()
+            } else {
+                radarView.play()
+            }
+        }
+        radarSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                radarAutoPlay = false
+                radarView.pause()
+                radarView.showFrame(progress)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
+        })
+        findViewById<View>(R.id.radar_zoom_in).setOnClickListener { radarView.zoomBy(1.0) }
+        findViewById<View>(R.id.radar_zoom_out).setOnClickListener { radarView.zoomBy(-1.0) }
+        findViewById<View>(R.id.radar_locate).setOnClickListener { radarView.recenter() }
     }
 
     private fun pill(parent: ViewGroup, text: Int, icon: Int, onClick: () -> Unit) {
@@ -740,7 +863,8 @@ class MainActivity : Activity(), Repo.Listener {
         const val TAB_NOW = 0
         const val TAB_HOURLY = 1
         const val TAB_DAILY = 2
-        const val TAB_CITIES = 3
+        const val TAB_RADAR = 3
+        const val TAB_CITIES = 4
 
         const val SEARCH_NONE = 0
         const val SEARCH_HOME = 1

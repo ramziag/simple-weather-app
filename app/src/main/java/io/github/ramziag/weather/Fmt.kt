@@ -1,7 +1,9 @@
 package io.github.ramziag.weather
 
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -58,6 +60,9 @@ class Fmt(val imperial: Boolean, is24Hour: Boolean, private val locale: Locale =
     fun hour(t: LocalDateTime): String = hourFormat.format(t)
 
     fun time(t: LocalDateTime?): String = t?.let(timeFormat::format) ?: "–"
+
+    /** Clock time on this device for an instant, e.g. a radar frame. */
+    fun clock(epochMillis: Long): String = timeFormat.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
 
     /** "Today", "Tomorrow" or "Monday, Oct 6". */
     fun dayHeading(d: LocalDate, today: LocalDate): String = when (d) {

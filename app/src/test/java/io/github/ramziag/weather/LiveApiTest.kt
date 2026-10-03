@@ -37,6 +37,25 @@ class LiveApiTest {
     }
 
     @Test
+    fun radarAndMapTiles() {
+        val maps = Radar.fetch()
+        println("radar: host=${maps.host} frames=${maps.frames.size} latest=${maps.frames.lastOrNull()?.path}")
+        assertTrue(maps.frames.size >= 6)
+        val z = Radar.MAX_RADAR_ZOOM
+        val x = (Radar.mercatorX(berlin.lon) * (1 shl z)).toInt()
+        val y = (Radar.mercatorY(berlin.lat) * (1 shl z)).toInt()
+        assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.last(), z, x, y)))
+        assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.first(), z - 2, x shr 2, y shr 2)))
+        assertPng(Http.bytes(Radar.baseTileUrl(dark = false, z = z, x = x, y = y)))
+        assertPng(Http.bytes(Radar.baseTileUrl(dark = true, z = 10, x = x shl 3, y = y shl 3)))
+    }
+
+    private fun assertPng(bytes: ByteArray) {
+        val png = bytes.size > 100 && bytes[1] == 'P'.code.toByte() && bytes[2] == 'N'.code.toByte() && bytes[3] == 'G'.code.toByte()
+        assertTrue("expected a PNG, got ${bytes.size} bytes", png)
+    }
+
+    @Test
     fun search() {
         val hits = OpenMeteo.search("Springfield, IL", "en")
         println("search: " + hits.take(3))

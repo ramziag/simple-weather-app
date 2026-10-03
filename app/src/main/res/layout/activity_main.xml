@@ -111,6 +111,13 @@
                 style="@style/PageList" />
         </ScrollView>
 
+        <include
+            android:id="@+id/page_radar"
+            layout="@layout/page_radar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <ScrollView
             android:id="@+id/page_cities"
             style="@style/Page"
@@ -165,6 +172,13 @@
 
         <include
             android:id="@+id/tab_daily"
+            layout="@layout/tab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <include
+            android:id="@+id/tab_radar"
             layout="@layout/tab"
             android:layout_width="0dp"
             android:layout_height="wrap_content"

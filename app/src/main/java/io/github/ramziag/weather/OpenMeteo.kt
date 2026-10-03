@@ -2,9 +2,6 @@ package io.github.ramziag.weather
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -46,12 +43,12 @@ object OpenMeteo {
     // ---- Network ----------------------------------------------------------------------------------------
 
     fun fetchForecast(p: Place): Pair<String, Forecast> {
-        val body = get(forecastUrl(p))
+        val body = Http.text(forecastUrl(p))
         return body to parseForecast(body, System.currentTimeMillis())
     }
 
     fun fetchSummaries(places: List<Place>): List<Summary> =
-        parseSummaries(get(summaryUrl(places)), System.currentTimeMillis())
+        parseSummaries(Http.text(summaryUrl(places)), System.currentTimeMillis())
 
     /**
      * Place search. "Springfield, IL" or "Paris, FR" style queries are split: the part before the comma
@@ -62,28 +59,10 @@ object OpenMeteo {
         val name = (if (comma >= 0) query.substring(0, comma) else query).trim()
         val qualifier = if (comma >= 0) query.substring(comma + 1).trim() else ""
         if (name.length < 2) return emptyList()
-        val hits = parseSearch(get(searchUrl(name, if (qualifier.isEmpty()) 10 else 30, language)))
+        val hits = parseSearch(Http.text(searchUrl(name, if (qualifier.isEmpty()) 10 else 30, language)))
         if (qualifier.isEmpty()) return hits.map { it.place }
         val narrowed = hits.filter { it.matches(qualifier) }
         return (narrowed.ifEmpty { hits }).take(10).map { it.place }
-    }
-
-    private fun get(url: String): String {
-        val c = URI(url).toURL().openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000
-        c.readTimeout = 20_000
-        c.setRequestProperty("User-Agent", "SimpleWeather (Android)")
-        try {
-            val code = c.responseCode
-            if (code !in 200..299) {
-                val err = c.errorStream?.bufferedReader()?.use { it.readText() }
-                val reason = err?.let { runCatching { JSONObject(it).optString("reason") }.getOrNull() }
-                throw IOException(if (reason.isNullOrEmpty()) "Server error $code" else reason)
-            }
-            return c.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            c.disconnect()
-        }
     }
 
     // ---- Parsing ----------------------------------------------------------------------------------------
