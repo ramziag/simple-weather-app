@@ -116,8 +116,8 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         playing = true
         waitedMs = 0
         onPlayingChanged?.invoke(true)
-        if (frame >= n - 1) showFrame(0)
-        postDelayed(stepper, FRAME_MS)
+        // From the latest frame, linger on "now" before looping back to the oldest.
+        postDelayed(stepper, if (frame >= n - 1) HOLD_LAST_MS else FRAME_MS)
         invalidate()
     }
 
