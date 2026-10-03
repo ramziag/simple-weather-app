@@ -9,9 +9,11 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import org.junit.Assert.assertEquals
@@ -40,11 +42,11 @@ class WidgetTest {
     private val app: Context get() = RuntimeEnvironment.getApplication()
     private val shots = System.getProperty("screenshots.dir")?.let(::File)?.apply { mkdirs() }
 
-    /** Widget sizes (dp) on a Pixel with GrapheneOS Launcher3's 5x5 grid. */
+    /** A widget size (dp) for each step: on a Pixel with GrapheneOS Launcher3's 5x5 grid, except COMPACT. */
     private val cells = mapOf(
-        Widgets.Size.COMPACT to (158 to 146),
+        Widgets.Size.COMPACT to (237 to 110), // a short row, as on denser grids
         Widgets.Size.STRIP to (315 to 146),
-        Widgets.Size.SQUARE to (158 to 292),
+        Widgets.Size.SQUARE to (158 to 146),
         Widgets.Size.WIDE to (315 to 292),
         Widgets.Size.TALL to (158 to 438),
         Widgets.Size.LARGE to (315 to 438),
@@ -56,10 +58,12 @@ class WidgetTest {
     @Test
     fun sizeSteps() {
         for ((size, cell) in cells) assertEquals(size, Widgets.sizeFor(cell.first, cell.second))
+        assertEquals(Widgets.Size.SQUARE, Widgets.sizeFor(158, 292)) // 2x2
         assertEquals(Widgets.Size.SQUARE, Widgets.sizeFor(237, 292)) // 3x2
+        assertEquals(Widgets.Size.SQUARE, Widgets.sizeFor(280, 146)) // too narrow for the strip's hours
         assertEquals(Widgets.Size.WIDE, Widgets.sizeFor(280, 292))
-        assertEquals(Widgets.Size.COMPACT, Widgets.sizeFor(280, 146)) // too narrow for the strip's hours
         assertEquals(Widgets.Size.WIDE, Widgets.sizeFor(600, 292))
+        assertEquals(Widgets.Size.COMPACT, Widgets.sizeFor(237, 110)) // a short row
         assertEquals(Widgets.Size.COMPACT, Widgets.sizeFor(0, 0)) // size not reported yet
     }
 
@@ -87,6 +91,19 @@ class WidgetTest {
                 if (wantHours) assertEquals(size != Widgets.Size.STRIP, view.findViewById<TextView>(R.id.h0_time).text.toString() == "Now")
                 if (theme == 0 || size == Widgets.Size.WIDE || size == Widgets.Size.LARGE) shot(view, "w-$label-${size.name.lowercase()}")
             }
+        }
+    }
+
+    /** Nothing may be cut off at the smallest size each step is picked for (at a phone's 2 or 4 columns). */
+    @Test
+    fun everyStepFitsAtItsSmallestSize() {
+        TestData.seed(app, theme = 1)
+        val forecast = ForecastFiles.read(ForecastFiles.file(app, TestData.home))!!
+        for (size in Widgets.Size.entries - Widgets.Size.COMPACT) {
+            val width = maxOf(size.width, 158)
+            val height = if (size == Widgets.Size.STRIP) 100 else size.height // the one-row strip goes down to any height
+            val view = inflateLikeALauncher(Widgets.preview(app, size, TestData.home, forecast), width, height)
+            assertFits(view, "$size at ${width}x$height")
         }
     }
 
@@ -231,15 +248,39 @@ class WidgetTest {
         views: android.widget.RemoteViews,
         size: Widgets.Size,
         host: Context = app.createPackageContext(app.packageName, 0),
+    ): View = cells.getValue(size).let { (w, h) -> inflateLikeALauncher(views, w, h, host) }
+
+    private fun inflateLikeALauncher(
+        views: android.widget.RemoteViews,
+        widthDp: Int,
+        heightDp: Int,
+        host: Context = app.createPackageContext(app.packageName, 0),
     ): View {
         val view = views.apply(host, FrameLayout(host))
-        val (w, h) = cells.getValue(size).let { (wDp, hDp) -> px(wDp) to px(hDp) }
+        val (w, h) = px(widthDp) to px(heightDp)
         view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
         view.layout(0, 0, w, h)
         return view
     }
 
     private fun px(dp: Int) = (dp * app.resources.displayMetrics.density).toInt()
+
+    /** Fails if a visible view sticks out of the padded area of any view around it (the launcher would cut it off). */
+    private fun assertFits(root: View, label: String) {
+        fun check(v: View, x: Int, y: Int, clip: Rect) {
+            if (v.visibility != View.VISIBLE || v.width == 0 || v.height == 0) return
+            val bounds = Rect(x, y, x + v.width, y + v.height)
+            if (v !is ViewGroup) {
+                val name = runCatching { v.resources.getResourceEntryName(v.id) }.getOrDefault(v.javaClass.simpleName)
+                assertTrue("$label: $name $bounds is cut off by $clip", clip.contains(bounds))
+                return
+            }
+            val inner = Rect(x + v.paddingLeft, y + v.paddingTop, bounds.right - v.paddingRight, bounds.bottom - v.paddingBottom)
+            if (!inner.intersect(clip)) inner.setEmpty()
+            for (i in 0 until v.childCount) v.getChildAt(i).let { check(it, x + it.left, y + it.top, inner) }
+        }
+        check(root, 0, 0, Rect(0, 0, root.width, root.height))
+    }
 
     /** Draws the widget on a wallpaper-ish backdrop with launcher-like margins. */
     private fun shot(view: View, name: String) {

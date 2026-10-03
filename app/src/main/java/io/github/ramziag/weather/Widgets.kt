@@ -36,11 +36,12 @@ object Widgets {
     private const val JOB_REFRESH = 7301
 
     /**
-     * Layout steps: the smallest size in dp each one fits. STRIP needs more width than the other wide steps to
-     * fit its hours next to the city name.
+     * Layout steps: the smallest size in dp each one is picked for. SQUARE starts at one home-screen row, so a
+     * 2x1 widget has room for the city name; STRIP needs more width than the other wide steps to fit its hours
+     * next to the city name. COMPACT is for anything smaller.
      */
     enum class Size(val width: Int, val height: Int) {
-        COMPACT(110, 50), STRIP(300, 50), SQUARE(110, 200), WIDE(250, 200), TALL(110, 380), LARGE(250, 380)
+        COMPACT(110, 50), STRIP(300, 50), SQUARE(110, 130), WIDE(250, 200), TALL(110, 380), LARGE(250, 380)
     }
 
     /**
