@@ -87,8 +87,11 @@ tasks.withType<Test>().configureEach {
     // LIVE_API=1 also runs the tests that call the real Open-Meteo API (CI does this).
     environment("LIVE_API", providers.environmentVariable("LIVE_API").orElse("").get())
     systemProperty("screenshots.dir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
+    // Robolectric touches JDK internals (file descriptors) that Java 17+ hides by default.
+    jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/java.io=ALL-UNNAMED")
     testLogging {
         events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showStandardStreams = true
     }
 }
