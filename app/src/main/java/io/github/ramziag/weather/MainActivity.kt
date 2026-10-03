@@ -341,7 +341,8 @@ class MainActivity : Activity(), Repo.Listener {
         }
         subtitle.visibility = if (subtitle.text.isEmpty()) View.GONE else View.VISIBLE
         units.text = fmt.unit
-        refresh.visibility = if (searching) View.GONE else View.VISIBLE
+        val canRefresh = !searching && (if (tab == TAB_CITIES) store.allPlaces.isNotEmpty() else p != null)
+        refresh.visibility = if (canRefresh) View.VISIBLE else View.GONE
         backHome.visibility = if (showsPlace && viewing != null) View.VISIBLE else View.GONE
     }
 

@@ -12,6 +12,16 @@ and a list of saved cities. Pastel themes, line icons, no clutter.
   older than 15 minutes.
 - Android 11 or newer (built for Android 16/17, edge-to-edge, predictive back).
 
+<p>
+  <img src="docs/screenshots/1-now.png" width="200" alt="Now tab">
+  <img src="docs/screenshots/3-daily.png" width="200" alt="10-day tab">
+  <img src="docs/screenshots/4-cities.png" width="200" alt="Cities tab">
+  <img src="docs/screenshots/7-dusk-now.png" width="200" alt="Dusk theme">
+</p>
+
+<sub>Screenshots use sample data. They're rendered by the UI test; run the Build workflow with
+"Commit fresh screenshots" ticked to refresh them.</sub>
+
 ## Using it
 
 | Tab | What it shows |

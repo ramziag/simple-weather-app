@@ -90,7 +90,7 @@ class UiTest {
         a.findViewById<EditText>(R.id.search_input).setText("Portland, OR")
         // Debounce, then the request (real network in CI; an error message is fine too).
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
-        waitFor { a.text(R.id.search_status) != "Searching…" }
+        waitFor(timeoutMs = 20_000) { a.text(R.id.search_status) != "Searching…" }
         shot(a, "6-search")
         val results = a.findViewById<ListView>(R.id.search_results)
         if (results.count > 0) {
@@ -169,8 +169,9 @@ class UiTest {
     private fun idle() = shadowOf(Looper.getMainLooper()).idle()
 
     /** Background I/O posts back to the (paused) main looper, so pump it until [done]. */
-    private fun waitFor(done: () -> Boolean) {
-        repeat(300) {
+    private fun waitFor(timeoutMs: Long = 6_000, done: () -> Boolean) {
+        val end = System.nanoTime() + timeoutMs * 1_000_000
+        while (System.nanoTime() < end) {
             idle()
             if (done()) return
             Thread.sleep(20)

@@ -24,7 +24,7 @@
     <string name="loading">Loading…</string>
 
     <string name="cities">Cities</string>
-    <string name="cities_hint">Tap a city to see its forecast · touch &amp; hold for options</string>
+    <string name="cities_hint">Tap to view · touch &amp; hold for options</string>
 
     <string name="search_hint">City or postal code</string>
     <string name="search_help">Tip: add a state or country to narrow it down, e.g. “Portland, OR” or “Paris, FR”.</string>
