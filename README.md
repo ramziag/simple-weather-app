@@ -56,9 +56,9 @@ uninstalling the old build once.
 Needs JDK 17+ and the Android SDK (Android Studio, or `ANDROID_HOME` set).
 
 ```sh
-./gradlew assembleRelease          # app/build/outputs/apk/release/app-release.apk
-./gradlew testReleaseUnitTest      # unit + UI tests; screenshots land in app/build/screenshots
-LIVE_API=1 ./gradlew testReleaseUnitTest   # also checks the live Open-Meteo API
+./gradlew assembleRelease                # app/build/outputs/apk/release/app-release.apk
+./gradlew testDebugUnitTest              # unit + UI tests; screenshots land in app/build/screenshots
+LIVE_API=1 ./gradlew testDebugUnitTest   # also checks the live Open-Meteo API
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
