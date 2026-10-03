@@ -16,13 +16,14 @@ an animated precipitation radar, and a list of saved cities. Pastel themes, line
 - Android 11 or newer (built for Android 16/17, edge-to-edge, predictive back).
 
 <p>
-  <img src="docs/screenshots/1-now.png" width="200" alt="Now tab">
-  <img src="docs/screenshots/3-daily.png" width="200" alt="10-day tab">
-  <img src="docs/screenshots/4-cities.png" width="200" alt="Cities tab">
-  <img src="docs/screenshots/7-dusk-now.png" width="200" alt="Dusk theme">
+  <img src="docs/screenshots/1-now.png" width="160" alt="Now tab">
+  <img src="docs/screenshots/3-daily.png" width="160" alt="10-day tab">
+  <img src="docs/screenshots/10-radar.png" width="160" alt="Radar tab">
+  <img src="docs/screenshots/4-cities.png" width="160" alt="Cities tab">
+  <img src="docs/screenshots/11-dusk-radar.png" width="160" alt="Radar in the Dusk theme">
 </p>
 
-<sub>Screenshots use sample data. They're rendered by the UI test; run the Build workflow with
+<sub>Forecast screenshots use sample data (the radar is live). They're rendered by the UI test; run the Build workflow with
 "Commit fresh screenshots" ticked to refresh them.</sub>
 
 ## Using it
