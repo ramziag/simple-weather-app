@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/wBg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="64dp"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="6dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/title"
+                style="@style/Text.Title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:drawablePadding="8dp" />
+
+            <TextView
+                android:id="@+id/subtitle"
+                style="@style/Text.Sub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/units"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/units"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:textColor="?attr/wText"
+            android:textSize="16sp" />
+
+        <ImageButton
+            android:id="@+id/theme"
+            style="@style/HeaderButton"
+            android:contentDescription="@string/theme"
+            android:src="@drawable/ic_theme" />
+
+        <ImageButton
+            android:id="@+id/refresh"
+            style="@style/HeaderButton"
+            android:contentDescription="@string/refresh"
+            android:src="@drawable/ic_refresh" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/back_home"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="4dp"
+        android:background="@drawable/bg_card"
+        android:drawableStart="@drawable/ic_home_small"
+        android:drawablePadding="6dp"
+        android:foreground="?android:attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="14dp"
+        android:text="@string/back_home"
+        android:textColor="?attr/wText"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ScrollView
+            android:id="@+id/page_now"
+            style="@style/Page">
+
+            <include layout="@layout/page_now" />
+        </ScrollView>
+
+        <ScrollView
+            android:id="@+id/page_hourly"
+            style="@style/Page"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/hourly_list"
+                style="@style/PageList" />
+        </ScrollView>
+
+        <ScrollView
+            android:id="@+id/page_daily"
+            style="@style/Page"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/daily_list"
+                style="@style/PageList" />
+        </ScrollView>
+
+        <ScrollView
+            android:id="@+id/page_cities"
+            style="@style/Page"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/cities_list"
+                style="@style/PageList"
+                android:paddingTop="8dp" />
+        </ScrollView>
+
+        <include
+            android:id="@+id/page_search"
+            layout="@layout/page_search"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/status"
+            style="@style/Text.Sub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="32dp"
+            android:textSize="15sp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/tabs"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/wCard"
+        android:orientation="horizontal"
+        android:paddingTop="8dp">
+
+        <include
+            android:id="@+id/tab_now"
+            layout="@layout/tab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <include
+            android:id="@+id/tab_hourly"
+            layout="@layout/tab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <include
+            android:id="@+id/tab_daily"
+            layout="@layout/tab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <include
+            android:id="@+id/tab_cities"
+            layout="@layout/tab"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

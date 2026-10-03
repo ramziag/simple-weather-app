@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Weather</string>
+
+    <string name="tab_now">Now</string>
+    <string name="tab_hourly">Hourly</string>
+    <string name="tab_daily">10-Day</string>
+    <string name="tab_cities">Cities</string>
+
+    <string name="units">Switch units</string>
+    <string name="theme">Theme</string>
+    <string name="refresh">Refresh</string>
+    <string name="back_home">Back to hometown</string>
+
+    <string name="next_hours">Next 24 hours</string>
+    <string name="details">Today</string>
+    <string name="attribution">Weather data by Open-Meteo.com (CC BY 4.0)</string>
+
+    <string name="welcome">Pick your hometown to get started.\nIt\'s saved on this device and shown here every time you open the app.</string>
+    <string name="choose_hometown">Choose hometown</string>
+    <string name="change_hometown">Change hometown</string>
+    <string name="add_city">Add city</string>
+    <string name="no_hometown">Choose a hometown on the Now tab first.</string>
+    <string name="loading">Loading…</string>
+
+    <string name="cities">Cities</string>
+    <string name="cities_hint">Tap a city to see its forecast · touch &amp; hold for options</string>
+
+    <string name="search_hint">City or postal code</string>
+    <string name="search_help">Tip: add a state or country to narrow it down, e.g. “Portland, OR” or “Paris, FR”.</string>
+    <string name="searching">Searching…</string>
+    <string name="no_matches">No matches</string>
+
+    <string name="make_hometown">Make hometown</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+    <string name="remove">Remove</string>
+</resources>

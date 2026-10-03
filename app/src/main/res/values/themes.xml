@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Base.Light" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">?attr/wBg</item>
+        <item name="android:colorBackground">?attr/wBg</item>
+        <item name="android:colorPrimary">?attr/wAccent</item>
+        <item name="android:colorAccent">?attr/wText</item>
+        <item name="android:colorControlHighlight">#1F000000</item>
+        <item name="android:textColorPrimary">?attr/wText</item>
+        <item name="android:textColorSecondary">?attr/wSub</item>
+        <item name="android:textColorHint">?attr/wSub</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/Dialog.Light</item>
+    </style>
+
+    <style name="Base.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">?attr/wBg</item>
+        <item name="android:colorBackground">?attr/wBg</item>
+        <item name="android:colorPrimary">?attr/wAccent</item>
+        <item name="android:colorAccent">?attr/wText</item>
+        <item name="android:colorControlHighlight">#24FFFFFF</item>
+        <item name="android:textColorPrimary">?attr/wText</item>
+        <item name="android:textColorSecondary">?attr/wSub</item>
+        <item name="android:textColorHint">?attr/wSub</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:alertDialogTheme">@style/Dialog.Dark</item>
+    </style>
+
+    <style name="Dialog.Light" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorBackground">?attr/wCard</item>
+        <item name="android:colorAccent">?attr/wText</item>
+        <item name="android:textColorPrimary">?attr/wText</item>
+        <item name="android:textColorSecondary">?attr/wSub</item>
+        <item name="android:textColorAlertDialogListItem">?attr/wText</item>
+    </style>
+
+    <style name="Dialog.Dark" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">?attr/wCard</item>
+        <item name="android:colorAccent">?attr/wText</item>
+        <item name="android:textColorPrimary">?attr/wText</item>
+        <item name="android:textColorSecondary">?attr/wSub</item>
+        <item name="android:textColorAlertDialogListItem">?attr/wText</item>
+    </style>
+
+    <!-- Pastel palettes. Order must match Themes.STYLES. -->
+    <style name="Theme.Weather.Sky" parent="Base.Light">
+        <item name="wBg">#DCEBF7</item>
+        <item name="wCard">#F3F8FC</item>
+        <item name="wText">#1F2D3A</item>
+        <item name="wSub">#526475</item>
+        <item name="wAccent">#A9CBE8</item>
+        <item name="wLine">#C9DAE8</item>
+    </style>
+
+    <style name="Theme.Weather.Mint" parent="Base.Light">
+        <item name="wBg">#D9F0E3</item>
+        <item name="wCard">#F1FAF5</item>
+        <item name="wText">#1D3027</item>
+        <item name="wSub">#4C685A</item>
+        <item name="wAccent">#9DD5B6</item>
+        <item name="wLine">#C3DFCF</item>
+    </style>
+
+    <style name="Theme.Weather.Peach" parent="Base.Light">
+        <item name="wBg">#FBE3D6</item>
+        <item name="wCard">#FFF5EF</item>
+        <item name="wText">#36261E</item>
+        <item name="wSub">#725648</item>
+        <item name="wAccent">#F4BC9F</item>
+        <item name="wLine">#EDD2C3</item>
+    </style>
+
+    <style name="Theme.Weather.Lavender" parent="Base.Light">
+        <item name="wBg">#E6E0F6</item>
+        <item name="wCard">#F7F5FD</item>
+        <item name="wText">#2A2540</item>
+        <item name="wSub">#5F587D</item>
+        <item name="wAccent">#C2B7EC</item>
+        <item name="wLine">#D6CFEC</item>
+    </style>
+
+    <style name="Theme.Weather.Rose" parent="Base.Light">
+        <item name="wBg">#F8DFE7</item>
+        <item name="wCard">#FFF4F7</item>
+        <item name="wText">#39222D</item>
+        <item name="wSub">#765362</item>
+        <item name="wAccent">#EDB3C4</item>
+        <item name="wLine">#EBCCD6</item>
+    </style>
+
+    <style name="Theme.Weather.Lemon" parent="Base.Light">
+        <item name="wBg">#F7F0CF</item>
+        <item name="wCard">#FFFCEE</item>
+        <item name="wText">#33301A</item>
+        <item name="wSub">#6A6440</item>
+        <item name="wAccent">#E8D788</item>
+        <item name="wLine">#E6DDB4</item>
+    </style>
+
+    <style name="Theme.Weather.Dusk" parent="Base.Dark">
+        <item name="wBg">#1C1F2B</item>
+        <item name="wCard">#262A3A</item>
+        <item name="wText">#ECEEF7</item>
+        <item name="wSub">#A2A8C3</item>
+        <item name="wAccent">#4F5C8F</item>
+        <item name="wLine">#363B50</item>
+    </style>
+
+    <style name="Theme.Weather.Moss" parent="Base.Dark">
+        <item name="wBg">#18211D</item>
+        <item name="wCard">#212C27</item>
+        <item name="wText">#E8F2EC</item>
+        <item name="wSub">#9DB5A8</item>
+        <item name="wAccent">#3F6B55</item>
+        <item name="wLine">#2F3D36</item>
+    </style>
+
+    <!-- Manifest theme: what the splash/first frame uses before the saved theme is applied. -->
+    <style name="Theme.Launch" parent="Theme.Weather.Sky" />
+</resources>

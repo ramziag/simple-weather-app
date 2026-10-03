@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Palette slots every theme fills in. -->
+    <attr name="wBg" format="color" />
+    <attr name="wCard" format="color" />
+    <attr name="wText" format="color" />
+    <attr name="wSub" format="color" />
+    <attr name="wAccent" format="color" />
+    <attr name="wLine" format="color" />
+</resources>
