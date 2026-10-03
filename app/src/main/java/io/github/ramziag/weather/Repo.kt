@@ -25,7 +25,7 @@ class Repo private constructor(context: Context) {
 
     var listener: Listener? = null
 
-    private val dir = File(context.cacheDir, "forecasts").apply { mkdirs() }
+    private val app = context.applicationContext
     private val summaryFile = File(context.cacheDir, "summaries.json")
     private val io = Executors.newFixedThreadPool(3)
     private val main = Handler(Looper.getMainLooper())
@@ -50,10 +50,10 @@ class Repo private constructor(context: Context) {
         val mem = forecasts[key]
         if (mem != null && !force && mem.isFresh()) return
         if (!busy.add(key)) return
-        val file = File(dir, "$key.json")
+        val file = ForecastFiles.file(app, place)
         io.execute {
             if (mem == null) {
-                val disk = readForecast(file)
+                val disk = ForecastFiles.read(file)
                 if (disk != null) {
                     main.post { if (forecasts[key] == null) publish(place, disk) }
                     if (!force && disk.isFresh()) {
@@ -64,7 +64,7 @@ class Repo private constructor(context: Context) {
             }
             try {
                 val (body, forecast) = OpenMeteo.fetchForecast(place)
-                writeAtomic(file, "${forecast.fetchedAt}\n$body")
+                ForecastFiles.write(file, forecast.fetchedAt, body)
                 main.post {
                     busy.remove(key)
                     publish(place, forecast)
@@ -158,16 +158,10 @@ class Repo private constructor(context: Context) {
     fun forget(place: Place) {
         forecasts.remove(place.key)
         summaries.remove(place.key)
-        val file = File(dir, "${place.key}.json")
+        val file = ForecastFiles.file(app, place)
         io.execute { file.delete() }
         saveSummaries()
     }
-
-    private fun readForecast(file: File): Forecast? = runCatching {
-        val text = file.readText()
-        val nl = text.indexOf('\n')
-        OpenMeteo.parseForecast(text.substring(nl + 1), text.substring(0, nl).toLong())
-    }.getOrNull()
 
     private fun readSummaries(): Map<String, Summary> = runCatching {
         val o = JSONObject(summaryFile.readText())
@@ -190,16 +184,10 @@ class Repo private constructor(context: Context) {
             )
         }
         val text = o.toString()
-        io.execute { runCatching { writeAtomic(summaryFile, text) } }
+        io.execute { runCatching { ForecastFiles.writeAtomic(summaryFile, text) } }
     }
 
     private fun JSONObject.putFinite(key: String, v: Double): JSONObject = if (v.isNaN()) this else put(key, v)
-
-    private fun writeAtomic(file: File, text: String) {
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(text)
-        if (!tmp.renameTo(file)) throw IOException("Could not write ${file.name}")
-    }
 
     private fun describe(e: Exception): String = when (e) {
         is UnknownHostException -> "Offline"
