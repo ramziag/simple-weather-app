@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_bg">#DCEBF7</color>
+
+    <!-- Widget defaults = the Auto theme (Sky by day, Dusk at night, see values-night). Other themes are
+         applied from code, because widgets are drawn by the launcher and can't use the app's theme. -->
+    <color name="widget_bg">#DCEBF7</color>
+    <color name="widget_text">#1F2D3A</color>
+    <color name="widget_sub">#526475</color>
+    <color name="widget_preview_bg">#DCEBF7</color>
 </resources>

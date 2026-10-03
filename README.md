@@ -36,10 +36,23 @@ an animated precipitation radar, and a list of saved cities. Pastel themes, line
 | **Radar** | Rain & snow over the past ~2 hours, animated. Drag, pinch or double-tap to zoom; ◎ recentres |
 | **Cities** | Hometown + saved cities. Tap to view one; touch & hold to make it your hometown, reorder or remove |
 
+Plus a resizable **home-screen widget** (below).
+
 Header buttons: **°F/°C** switches units instantly, **◐** picks a theme (Sky, Mint, Peach, Lavender, Rose,
 Lemon, Dusk, Moss, or Auto = Sky/Dusk following the system dark mode), **↻** refreshes.
 
 Search tip: add a state or country to narrow results, e.g. `Portland, OR` or `Paris, FR`.
+
+### Home-screen widget
+
+Touch & hold the home screen → **Widgets** → **Weather**. It opens at 4×2 and resizes from 2×1 up to 4×3 and
+beyond: the current conditions always, the next hours when it's wide, the next days when it's tall.
+
+- Shows your hometown. To show a saved city instead, touch & hold the widget and pick **Reconfigure** (on
+  Android 11 you choose when placing it). Tapping it opens the app on that city.
+- Refreshes about every 30 minutes (the shortest interval Android allows for widgets; it pauses while the phone
+  is in deep sleep) and straight away whenever the app fetches new data. No extra permissions.
+- Uses the app's theme; with **Auto** it follows the system's light/dark mode.
 
 ## Getting the APK
 
@@ -85,7 +98,10 @@ All code is in `app/src/main/java/io/github/ramziag/weather/`:
 - `OpenMeteo.kt` — forecast and search URLs and JSON parsing (pure JVM, unit tested).
 - `Radar.kt`, `RadarView.kt`, `TileCache.kt` — radar frames and tile URLs, the map view (pan/zoom/animation),
   and the tile memory cache (backed by Android's HTTP disk cache).
-- `Repo.kt` — memory + disk cache and background loading.
+- `Repo.kt`, `ForecastFiles.kt` — memory + disk cache and background loading; the disk cache is shared with
+  the widget.
+- `Widgets.kt`, `WeatherWidget.kt`, `WidgetRefreshJob.kt`, `WidgetConfigActivity.kt` — the home-screen widget:
+  drawing (RemoteViews), the system update hook, the background fetch job and the city picker.
 - `Store.kt` — saved hometown, cities, units and theme; theme list.
 - `Forecast.kt`, `Place.kt`, `Fmt.kt`, `Wmo.kt`, `RangeBar.kt`, `Http.kt` — models, formatting, weather
   codes, the 10-day temperature bar, HTTP helper.

@@ -42,4 +42,17 @@ object Wmo {
         95, 96, 99 -> R.drawable.w_storm
         else -> R.drawable.w_cloudy
     }
+
+    /** Same icons without a theme tint, for the home-screen widget (which colours them itself). */
+    fun widgetIcon(code: Int, day: Boolean): Int = when (code) {
+        0, 1 -> if (day) R.drawable.widget_clear_day else R.drawable.widget_clear_night
+        2 -> if (day) R.drawable.widget_partly_day else R.drawable.widget_partly_night
+        45, 48 -> R.drawable.widget_fog
+        51, 53, 55 -> R.drawable.widget_drizzle
+        56, 57, 66, 67 -> R.drawable.widget_sleet
+        61, 63, 65, 80, 81, 82 -> R.drawable.widget_rain
+        71, 73, 75, 77, 85, 86 -> R.drawable.widget_snow
+        95, 96, 99 -> R.drawable.widget_storm
+        else -> R.drawable.widget_cloudy
+    }
 }

@@ -1,7 +1,6 @@
 package io.github.ramziag.weather
 
 import android.app.Activity
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
@@ -23,10 +22,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileOutputStream
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.temporal.ChronoUnit
 
 /**
  * Drives the real activity on a Pixel-sized screen with cached data (no network needed) and saves a
@@ -37,18 +32,10 @@ import java.time.temporal.ChronoUnit
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiTest {
 
-    private val home = Place("Springfield", "Illinois, United States", 39.80172, -89.64371)
-    private val paris = Place("Paris", "Île-de-France, France", 48.85341, 2.3488)
-    private val tokyo = Place("Tokyo", "Tokyo, Japan", 35.6895, 139.69171)
     private val shots = System.getProperty("screenshots.dir")?.let(::File)?.apply { mkdirs() }
 
     @Before
-    fun resetSingletons() {
-        // Store and Repo live for the whole process; give every test a clean one.
-        for (c in listOf(Store::class.java, Repo::class.java)) {
-            c.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
-        }
-    }
+    fun resetSingletons() = TestData.resetSingletons()
 
     @Test
     fun allPages() {
@@ -154,29 +141,8 @@ class UiTest {
 
     private fun store() = Store.get(RuntimeEnvironment.getApplication())
 
-    /** Saved places plus fresh cached forecasts, with the fixture's dates moved to "today" at UTC-5. */
-    private fun seed(theme: Int, withPlaces: Boolean = true) {
-        val app = RuntimeEnvironment.getApplication()
-        val prefs = app.getSharedPreferences("weather", Context.MODE_PRIVATE).edit().clear()
-        if (withPlaces) {
-            prefs.putString("home", home.toJson().toString())
-            prefs.putString("cities", Place.listJson(listOf(paris, tokyo)))
-        }
-        prefs.putBoolean("imperial", true).putInt("theme", theme).commit()
-
-        val now = System.currentTimeMillis()
-        val today = LocalDateTime.ofEpochSecond(now / 1000, 0, ZoneOffset.ofHours(-5)).toLocalDate()
-        val shift = ChronoUnit.DAYS.between(LocalDate.of(2026, 10, 3), today)
-        val body = Regex("2026-10-(\\d\\d)").replace(javaClass.classLoader!!.getResource("forecast.json")!!.readText()) {
-            LocalDate.of(2026, 10, it.groupValues[1].toInt()).plusDays(shift).toString()
-        }
-        val dir = File(app.cacheDir, "forecasts").apply { mkdirs() }
-        for (p in listOf(home, paris, tokyo)) File(dir, "${p.key}.json").writeText("$now\n$body")
-        File(app.cacheDir, "summaries.json").writeText(
-            """{"${paris.key}":{"temp":15.2,"code":3,"day":true,"max":17,"min":9.5,"at":$now},""" +
-                """"${tokyo.key}":{"temp":21,"code":61,"day":false,"max":24.1,"min":18.2,"at":$now}}""",
-        )
-    }
+    private fun seed(theme: Int, withPlaces: Boolean = true) =
+        TestData.seed(RuntimeEnvironment.getApplication(), theme, withPlaces)
 
     private fun launch(): Activity {
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get()

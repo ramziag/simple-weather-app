@@ -19,6 +19,9 @@ object ForecastFiles {
         OpenMeteo.parseForecast(text.substring(nl + 1), text.substring(0, nl).toLong())
     }.getOrNull()
 
+    /** When the cached forecast was fetched, reading only the first line; null if there is none. */
+    fun fetchedAt(file: File): Long? = runCatching { file.bufferedReader().use { it.readLine() }.toLong() }.getOrNull()
+
     fun write(file: File, fetchedAt: Long, body: String) = writeAtomic(file, "$fetchedAt\n$body")
 
     /** Blocking: the cached forecast if it's newer than [maxAgeMs], otherwise a fresh one (cached on success). */

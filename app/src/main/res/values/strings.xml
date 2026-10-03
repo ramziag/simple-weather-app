@@ -42,6 +42,13 @@
     <string name="play">Play</string>
     <string name="pause">Pause</string>
 
+    <string name="widget_description">Current weather, the next hours and days for your hometown or a saved city</string>
+    <string name="widget_loading">Loading weather…</string>
+    <string name="widget_no_home">Open Weather to choose your hometown</string>
+    <string name="widget_pick">Show in this widget</string>
+    <string name="widget_follow_home">Hometown</string>
+    <string name="widget_follow_home_hint">Follows your hometown if you change it</string>
+
     <string name="make_hometown">Make hometown</string>
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>

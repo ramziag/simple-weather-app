@@ -3,6 +3,7 @@ package io.github.ramziag.weather
 import android.annotation.TargetApi
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Build
@@ -184,6 +185,22 @@ class MainActivity : Activity(), Repo.Listener {
         repo.listener = this
         forecast = place?.let(repo::cached)
         showTab(tab)
+        if (savedInstanceState == null) openFromWidget(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openFromWidget(intent)
+    }
+
+    /** A widget tap carries the widget's city (empty = hometown): show it on the Now tab. */
+    private fun openFromWidget(intent: Intent?) {
+        val ref = intent?.getStringExtra(Widgets.EXTRA_PLACE) ?: return
+        intent.removeExtra(Widgets.EXTRA_PLACE)
+        if (searchMode != SEARCH_NONE) closeSearch(TAB_NOW)
+        setPlace(if (ref.isEmpty()) null else Place.parse(ref))
+        showTab(TAB_NOW)
     }
 
     override fun onResume() {
@@ -300,6 +317,7 @@ class MainActivity : Activity(), Repo.Listener {
         store.home = p
         setPlace(null)
         repo.loadSummaries(store.allPlaces, false)
+        Widgets.update(this)
     }
 
     private fun markDirty() = dirty.fill(true)
@@ -707,6 +725,7 @@ class MainActivity : Activity(), Repo.Listener {
         fmt = Fmt(store.imperial, is24Hour)
         markDirty()
         render()
+        Widgets.update(this)
     }
 
     private fun pickTheme() {
@@ -716,6 +735,7 @@ class MainActivity : Activity(), Repo.Listener {
                 dialog.dismiss()
                 if (which != store.theme) {
                     store.theme = which
+                    Widgets.update(this)
                     recreate()
                 }
             }

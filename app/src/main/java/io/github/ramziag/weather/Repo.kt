@@ -68,6 +68,7 @@ class Repo private constructor(context: Context) {
                 main.post {
                     busy.remove(key)
                     publish(place, forecast)
+                    Widgets.update(app)
                 }
             } catch (e: Exception) {
                 main.post {
