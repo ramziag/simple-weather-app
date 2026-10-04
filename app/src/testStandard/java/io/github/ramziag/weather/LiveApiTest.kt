@@ -7,7 +7,10 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Hits the real Open-Meteo API. Skipped unless LIVE_API=1 (CI sets it) so local runs work offline. */
+/**
+ * Hits the real Open-Meteo, RainViewer and OpenStreetMap services. Skipped unless LIVE_API=1 (CI sets it) so local
+ * runs work offline. Both apps share this code, so it lives in the standard tests only: once per build is enough.
+ */
 class LiveApiTest {
 
     private val berlin = Place("Berlin", "Germany", 52.52, 13.41)
@@ -44,7 +47,9 @@ class LiveApiTest {
         val z = Radar.MAX_RADAR_ZOOM
         val x = (Radar.mercatorX(berlin.lon) * (1 shl z)).toInt()
         val y = (Radar.mercatorY(berlin.lat) * (1 shl z)).toInt()
-        assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.last(), z, x, y)))
+        // The newest frame is listed a minute or two before its tiles reach RainViewer's CDN (the app retries
+        // tiles that fail), so check the one before it.
+        assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames[maps.frames.size - 2], z, x, y)))
         assertPng(Http.bytes(Radar.radarTileUrl(maps, maps.frames.first(), z - 2, x shr 2, y shr 2)))
         assertPng(Http.bytes(Radar.baseTileUrl(z, x, y)))
         assertPng(Http.bytes(Radar.baseTileUrl(10, x shl 3, y shl 3)))
