@@ -15,6 +15,8 @@ object Here {
     fun resume() {}
     fun pause() {}
     fun tick(viewingHere: Boolean) {}
+    fun left() {}
+    fun cancelSearch() {}
     fun refresh() {}
     fun widgetOpened() {}
     fun onPermissionsResult(code: Int) {}

@@ -63,8 +63,9 @@ object Nominatim {
 /**
  * Place names by rounded spot and language, so each ~1 km cell is looked up once: the 20 most recently used
  * live in [file] (names forever, "nothing here" for 30 days). Requests go out at least 1.1 s apart; after a
- * network error, 429 or 5xx none for 15 min, after a 403 (blocked) none for a day. Blocking, so call it from a
- * background thread; one lookup runs at a time.
+ * network error, 429 or 5xx none for 15 min, after a 403 (blocked) none for a day. A pause the server asked for
+ * (403, 429, 5xx) is kept in [file] too, so a new process doesn't knock again; one after a network error isn't, as
+ * a new process may well be back online. Blocking, so call it from a background thread; one lookup runs at a time.
  */
 class Names(
     private val file: File,
@@ -78,7 +79,8 @@ class Names(
     }
     private var loaded = false
     private var lastAt = Long.MIN_VALUE / 2
-    private var until = Long.MIN_VALUE
+    private var until = Long.MIN_VALUE // no requests before this
+    private var held = Long.MIN_VALUE // the part of it the server asked for, kept in [file]
 
     /** The cached name, else (when [network]) Nominatim's; null when unknown, not found or unavailable. */
     @Synchronized
@@ -95,25 +97,44 @@ class Names(
         lastAt = clock()
         val result = try {
             val (code, body) = Nominatim.fetch(Nominatim.url(lat, lon, lang))
-            if (code !in 200..299) {
-                until = lastAt + if (code == 403) BLOCKED_MS else BACKOFF_MS
-                return null
-            }
+            if (code !in 200..299) return backOff(if (code == 403) BLOCKED_MS else BACKOFF_MS, server = true)
             Nominatim.parse(body, lang)
         } catch (e: Exception) {
-            until = lastAt + BACKOFF_MS // offline, timeout or an unreadable reply
-            return null
+            return backOff(BACKOFF_MS, server = false) // offline, timeout or an unreadable reply
         }
         map[key] = Entry(result?.first, result?.second.orEmpty(), lastAt)
         save()
         return result
     }
 
+    /** "Stop using location": forgets every name, but a pause the server asked for still holds. */
+    @Synchronized
+    fun forget() {
+        load()
+        map.clear()
+        if (clock() < held) save() else file.delete()
+    }
+
+    private fun backOff(ms: Long, server: Boolean): Nothing? {
+        until = lastAt + ms
+        if (server) {
+            held = until
+            save()
+        }
+        return null
+    }
+
     private fun load() {
         if (loaded) return
         loaded = true
         runCatching {
-            val a = JSONArray(file.readText())
+            val text = file.readText()
+            // Older versions wrote the bare array of names.
+            val o = if (text.trimStart().startsWith("[")) JSONObject().put("e", JSONArray(text)) else JSONObject(text)
+            // Never longer than a day: a deadline far ahead can only come from a clock set back since.
+            held = minOf(o.optLong("until", Long.MIN_VALUE), clock() + BLOCKED_MS)
+            until = held
+            val a = o.optJSONArray("e") ?: JSONArray()
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 map[o.getString("k")] = Entry(if (o.has("n")) o.getString("n") else null, o.optString("a"), o.getLong("t"))
@@ -121,11 +142,12 @@ class Names(
         }
     }
 
-    /** Least recently used first, so [load] rebuilds the same order. */
+    /** Least recently used first, so [load] rebuilds the same order; with the pause while it lasts. */
     private fun save() {
         val a = JSONArray()
         for ((k, e) in map) a.put(JSONObject().put("k", k).put("n", e.name).put("a", e.area).put("t", e.at))
-        runCatching { ForecastFiles.writeAtomic(file, a.toString()) }
+        val o = JSONObject().put("e", a).apply { if (clock() < held) put("until", held) }
+        runCatching { ForecastFiles.writeAtomic(file, o.toString()) }
     }
 
     companion object {

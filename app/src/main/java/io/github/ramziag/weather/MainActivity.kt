@@ -91,6 +91,7 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
     private var radarError: String? = null
     private var radarAutoPlay = true
     private var refreshing = false
+    private var keptOld = false // the forecast on screen is the spot My location just moved from
     private var renderedHour: LocalDateTime? = null
     private var hadHere = false
     private var hereSearchText: String? = null
@@ -263,6 +264,7 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
 
     override fun onStop() {
         radarView.trim()
+        if (Here.ENABLED && !isChangingConfigurations) Here.left()
         super.onStop()
     }
 
@@ -276,7 +278,8 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // Empty results mean the request was cancelled (e.g. another was showing): nothing changes.
+        // Empty arrays come only from a request superseded by one still showing: nothing changes. Dismissing the
+        // dialog (Back) gives full arrays with nothing granted; Here tells that apart from a denial.
         if (Here.ENABLED && grantResults.isNotEmpty()) Here.onPermissionsResult(requestCode)
     }
 
@@ -322,7 +325,9 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
         dirty[TAB_CITIES] = true
         if (place == this.place) {
             refreshing = false
-            if (forecast != null) this.forecast = forecast
+            // A failed load for the new spot drops the carried-over one: it is another place's weather.
+            if (forecast != null) this.forecast = forecast else if (keptOld) this.forecast = null
+            keptOld = false
             this.error = error
             markDirty()
         }
@@ -346,6 +351,7 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
     private fun setPlace(p: Place?) {
         viewing = p?.takeIf { it != defaultPlace }
         forecast = place?.let(repo::cached)
+        keptOld = false
         error = null
         markDirty()
         place?.let { repo.loadForecast(it, false) }
@@ -376,10 +382,12 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
         if (moved) {
             val old = forecast
             setPlace(viewing)
-            // Moved to a new spot: keep the last spot's forecast up, as "Updating…", until the new one arrives.
+            // Moved to a new spot: keep the last spot's forecast up, as "Updating…", until the new one arrives
+            // (or fails to: see onForecast).
             if (hadHere && viewing == null && forecast == null && old != null && place?.here == true) {
                 forecast = old
                 refreshing = true
+                keptOld = true
             }
             if (tab == TAB_CITIES) repo.loadSummaries(listed(), false)
         }
@@ -388,7 +396,11 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
         if (searchMode != SEARCH_NONE) {
             showAction(searchHere, Here.action(SLOT_SEARCH))
             val text = Here.text(this, TEXT_SEARCH)
-            if (text != null && text != hereSearchText) searchStatus.text = text
+            if (text != hereSearchText) {
+                // Gone (e.g. stopped by a pause): back to the help, unless a typed query's status replaced it.
+                if (text != null) searchStatus.text = text
+                else if (searchStatus.text.toString() == hereSearchText) searchStatus.setText(R.string.search_help)
+            }
             hereSearchText = text
         }
         render()
@@ -807,6 +819,7 @@ class MainActivity : Activity(), Repo.Listener, HereHost {
     private fun closeSearch(toTab: Int) {
         searchMode = SEARCH_NONE
         searchSeq++
+        if (Here.ENABLED) Here.cancelSearch()
         handler.removeCallbacks(searchRunnable)
         searchInput.windowInsetsController?.hide(WindowInsets.Type.ime())
         searchInput.clearFocus()

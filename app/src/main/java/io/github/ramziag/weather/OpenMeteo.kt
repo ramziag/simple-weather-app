@@ -42,13 +42,16 @@ object OpenMeteo {
 
     // ---- Network ----------------------------------------------------------------------------------------
 
+    /** Test hook: GET [url] and return the body. */
+    internal var fetch: (String) -> String = Http::text
+
     fun fetchForecast(p: Place): Pair<String, Forecast> {
-        val body = Http.text(forecastUrl(p))
+        val body = fetch(forecastUrl(p))
         return body to parseForecast(body, System.currentTimeMillis())
     }
 
     fun fetchSummaries(places: List<Place>): List<Summary> =
-        parseSummaries(Http.text(summaryUrl(places)), System.currentTimeMillis())
+        parseSummaries(fetch(summaryUrl(places)), System.currentTimeMillis())
 
     /**
      * Place search. "Springfield, IL" or "Paris, FR" style queries are split: the part before the comma
@@ -59,7 +62,7 @@ object OpenMeteo {
         val name = (if (comma >= 0) query.substring(0, comma) else query).trim()
         val qualifier = if (comma >= 0) query.substring(comma + 1).trim() else ""
         if (name.length < 2) return emptyList()
-        val hits = parseSearch(Http.text(searchUrl(name, if (qualifier.isEmpty()) 10 else 30, language)))
+        val hits = parseSearch(fetch(searchUrl(name, if (qualifier.isEmpty()) 10 else 30, language)))
         if (qualifier.isEmpty()) return hits.map { it.place }
         val narrowed = hits.filter { it.matches(qualifier) }
         return (narrowed.ifEmpty { hits }).take(10).map { it.place }

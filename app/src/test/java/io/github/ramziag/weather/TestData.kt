@@ -19,6 +19,7 @@ object TestData {
             c.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
         }
         Here.resetForTest()
+        OpenMeteo.fetch = Http::text
     }
 
     /** Hometown + two cities (and no My location), °F, the given theme, and forecasts cached [ageMs] ago. */

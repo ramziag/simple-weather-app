@@ -1,10 +1,12 @@
 package io.github.ramziag.weather
 
+import android.content.Intent
 import android.location.LocationManager
 import android.location.LocationRequest
 import android.provider.Settings
 import android.view.View
 import android.widget.TextView
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -13,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.IOException
@@ -39,6 +42,55 @@ class HereLocateTest : HereFixture() {
         c.pause().resume()
         idle()
         assertEquals(1, lm.getLocationUpdateListeners(GPS).size)
+    }
+
+    /** Switched on from Quick Settings: pulling down the shade doesn't pause the app, so the switch is watched. */
+    @Test
+    fun locationOnFromQuickSettings() {
+        seed(withPlaces = false)
+        grant(FINE, COARSE)
+        lm.setLocationEnabled(false)
+        val c = launch()
+        val a = c.get()
+        a.click(R.id.use_location)
+        assertEquals("Turn on location", a.text(R.id.use_location))
+        assertTrue(listeners().isEmpty())
+
+        lm.setLocationEnabled(true)
+        app.sendBroadcast(Intent(LocationManager.MODE_CHANGED_ACTION))
+        idle()
+        assertEquals(1, listeners().size)
+        assertEquals("Locating…", a.text(R.id.use_location))
+
+        // Watched only while resumed, and only once.
+        assertEquals(1, modeReceivers())
+        c.pause()
+        assertEquals(0, modeReceivers())
+        c.resume()
+        Here.resume()
+        assertEquals(1, modeReceivers())
+    }
+
+    private fun modeReceivers() =
+        shadowOf(app).registeredReceivers.count { it.intentFilter.hasAction(LocationManager.MODE_CHANGED_ACTION) }
+
+    /** Once a fix has failed, the ticker waits 15 min too: no GPS request every few minutes while on screen. */
+    @Test
+    fun tickerDoesNotPollAfterFailure() {
+        seed()
+        seedHere(fixAgoMs = 20 * MIN)
+        grant(FINE, COARSE)
+        launch()
+        assertEquals("a 20 min old fix is renewed on resume", 1, listeners().size)
+        idleFor(45_100)
+        assertTrue(listeners().isEmpty())
+
+        setFailAgo(3 * MIN)
+        idleFor(30_000) // the ticker runs at 60 s
+        assertTrue("no retry 3 min after a failure", listeners().isEmpty())
+        setFailAgo(16 * MIN)
+        idleFor(50_000) // and at 120 s
+        assertEquals(1, listeners().size)
     }
 
     @Test
@@ -303,7 +355,25 @@ class HereLocateTest : HereFixture() {
         waitFor { a.findViewById<TextView>(R.id.status).visibility != View.VISIBLE }
         assertEquals("My location", a.text(R.id.title))
         assertTrue(a.text(R.id.subtitle), a.text(R.id.subtitle).startsWith("41.88° N, 87.63° W · updated"))
-        assertFalse("failures aren't cached", File(app.noBackupFilesDir, "names.json").exists())
+        // Failures aren't cached, and the 15 min pause after a network error lasts only as long as the process.
+        assertFalse(File(app.noBackupFilesDir, "names.json").exists())
+        lookups.clear()
+        setFixAgo(2 * MIN)
+        Here.refresh() // the same spot, still unnamed: paused (the same steps look it up below)
+        simulate(41.8781, -87.6298, 9f)
+        Thread.sleep(100)
+        idle()
+        assertTrue(lookups.toString(), lookups.isEmpty())
+
+        // Back online in a new process: named at once.
+        nominatim = { 200 to CHICAGO }
+        reset()
+        launch()
+        setFixAgo(2 * MIN)
+        Here.refresh()
+        simulate(41.8781, -87.6298, 9f)
+        waitFor { Here.place(app)?.name == "Chicago" }
+        assertEquals(1, lookups.size)
     }
 
     @Test

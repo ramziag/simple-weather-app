@@ -107,6 +107,22 @@ class HereWidgetTest : HereFixture() {
         assertEquals("Chicago", a.text(R.id.title))
         assertEquals(1, listeners().size)
 
+        // The usual case on a phone: the app is in the background, so the tap arrives while it is paused. It
+        // looks again once resumed, never before.
+        simulate(41.8781, -87.6298, 9f)
+        assertTrue(listeners().isEmpty())
+        idleFor(3 * MIN) // too old by then to stand in for a new fix
+        a.openCity("Paris")
+        setFixAgo(3 * MIN)
+        c.pause()
+        c.newIntent(Intent(open))
+        idle()
+        assertTrue(listeners().isEmpty())
+        c.resume()
+        idle()
+        assertEquals("Chicago", a.text(R.id.title))
+        assertEquals(1, listeners().size)
+
         // The hometown widget opens the hometown itself, even though My location is the default.
         c.newIntent(tap(42))
         idle()

@@ -263,6 +263,11 @@ abstract class HereFixture {
         Here::class.java.getDeclaredField("fixAt").apply { isAccessible = true }.setLong(null, System.currentTimeMillis() - ms)
     }
 
+    /** As if My location's last failed attempt were [ms] ago. */
+    protected fun setFailAgo(ms: Long) {
+        Here::class.java.getDeclaredField("failAt").apply { isAccessible = true }.setLong(null, System.currentTimeMillis() - ms)
+    }
+
     /** A fix at [lat], [lon] named by the stub (or a saved place), then waits for the name. */
     protected fun fixNamed(lat: Double, lon: Double, accM: Float, name: String, provider: String = GPS) {
         simulate(lat, lon, accM, provider)

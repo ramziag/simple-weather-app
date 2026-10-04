@@ -4,15 +4,19 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.widget.Toast
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -41,6 +45,9 @@ object Here {
     @Volatile private var on = false
     @Volatile private var here: Place? = null
     private var blocked = false // denied for good: only App info can grant it now
+    private var preciseBlocked = false // the same for "Use precise location"
+    private var deniedOnce = false // a request already ended without the permission: the next silent "no" is for good
+    private var preciseDeniedOnce = false // the same for "Use precise location"
     private var names = true // look up place names on the network
     private var fixAt = 0L // wall-clock time of the newest fix used
     private var failAt = 0L
@@ -58,6 +65,10 @@ object Here {
     private var fromWidget = false
     private var askedForSearch = false
     private var upgrading = false
+    private var askedRationale = false // what the rationale check said just before the dialog
+    private var revokeOnLeave = false // "Stop using location": give the permission back once the app is left
+    private var revoked = false // given back; it stays granted until the system kills the process
+    private var watchingMode = false
     private var searching = false
     private var searchStatus: String? = null
     private var searchSeq = 0
@@ -68,6 +79,15 @@ object Here {
     private var cache: Names? = null // used on [net] only
 
     private val starter = Runnable { if (resumed && phase == Locator.LOCATING) start() }
+
+    /** The location switch, watched while resumed: Quick Settings doesn't pause the app, so resume() can't see it. */
+    private val modeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (!resumed || phase != Locator.OFF || !loc().enabled()) return
+            phase = Locator.IDLE
+            if (on && has(COARSE)) locate() else changed(false)
+        }
+    }
 
     /** My location when it is on and has been found, whatever the permission says now; null otherwise. */
     fun place(c: Context): Place? {
@@ -89,12 +109,21 @@ object Here {
         val coarse = has(COARSE)
         if (coarse) {
             val a = !has(FINE)
-            if (blocked || approx != a) {
+            val pb = preciseBlocked && a
+            val pd = preciseDeniedOnce && a
+            if (blocked || deniedOnce || approx != a || preciseBlocked != pb || preciseDeniedOnce != pd) {
                 blocked = false
+                deniedOnce = false
                 approx = a
+                preciseBlocked = pb
+                preciseDeniedOnce = pd
                 save()
             }
             if (phase == Locator.OFF && loc().enabled()) phase = Locator.IDLE
+        }
+        if (!watchingMode) {
+            watchingMode = true
+            app?.registerReceiver(modeReceiver, IntentFilter(LocationManager.MODE_CHANGED_ACTION), Context.RECEIVER_NOT_EXPORTED)
         }
         val want = pending || (on && ((fromWidget && age() > 2 * MIN) || due(10 * MIN)))
         pending = false
@@ -109,6 +138,7 @@ object Here {
 
     fun pause() {
         resumed = false
+        unwatchMode()
         cancelStart()
         locator?.stop()
         if (phase == Locator.LOCATING) phase = Locator.IDLE
@@ -119,9 +149,36 @@ object Here {
         }
     }
 
-    /** Once a minute from MainActivity's ticker: keeps My location current while it is on screen. */
+    /**
+     * Once a minute from MainActivity's ticker: keeps My location current while it is on screen. At most every
+     * 15 min, failed attempts included: due()'s quick retry is for coming back to the app, not for polling the GPS.
+     */
     fun tick(viewingHere: Boolean) {
-        if (viewingHere && on && resumed && phase != Locator.LOCATING && due(15 * MIN)) locate()
+        val idle = System.currentTimeMillis() - maxOf(fixAt, failAt)
+        if (viewingHere && on && resumed && phase != Locator.LOCATING && idle > 15 * MIN) locate()
+    }
+
+    /** MainActivity stopped (left, not recreated): the moment to give the permission back after "Stop using location". */
+    fun left() {
+        if (revokeOnLeave && !on && Build.VERSION.SDK_INT >= 33) {
+            runCatching { app?.revokeSelfPermissionsOnKill(listOf(FINE, COARSE)) }
+            revoked = true
+        }
+        revokeOnLeave = false
+    }
+
+    /** The search page closed: its "Use my location" stops, so a late fix can't be picked into another search. */
+    fun cancelSearch() {
+        searchStatus = null
+        if (!searching) return
+        searching = false
+        searchSeq++
+        if (!on) {
+            pending = false
+            cancelStart()
+            locator?.stop()
+            if (phase == Locator.LOCATING) phase = Locator.IDLE
+        }
     }
 
     /** Refresh while showing My location: ask again if the permission is gone, else renew an old fix. */
@@ -138,7 +195,10 @@ object Here {
         if (!resumed) fromWidget = true else if (on && age() > 2 * MIN) locate()
     }
 
-    /** The permission dialog closed (MainActivity skips cancelled requests: empty result arrays). */
+    /**
+     * The permission dialog closed. MainActivity skips empty result arrays: those come only from a request
+     * superseded by one still showing. Back gives full arrays with nothing granted, just like a denial.
+     */
     fun onPermissionsResult(code: Int) {
         if (code != REQUEST_LOCATION) return
         val a = host as? Activity ?: return
@@ -146,17 +206,33 @@ object Here {
         val upgrade = upgrading
         askedForSearch = false
         upgrading = false
+        // Denied for good when the rationale is false after an earlier denial: "Don't allow" a second time, and the
+        // dialog won't show any more. That denial is the rationale seen true before this dialog, or else (the
+        // process may have died in between, or the permission was fixed where the app never saw it) the last
+        // result on record. False before and after the first time says nothing: dismissed with Back, or the first
+        // answer. A second silent "no" in a row is taken as for good: App info is a way out, a dead button isn't.
+        val after = a.shouldShowRequestPermissionRationale(FINE)
+        val asked = askedRationale
+        askedRationale = false
+        fun refused(deniedBefore: Boolean) = !after && (asked || deniedBefore)
         // What counts is what the app holds now, not the dialog's own answer.
         if (has(COARSE)) {
             blocked = false
+            deniedOnce = false
             approx = !has(FINE)
+            if (approx && upgrade) {
+                preciseBlocked = preciseBlocked || refused(preciseDeniedOnce)
+                preciseDeniedOnce = true
+            }
+            preciseBlocked = preciseBlocked && approx
+            preciseDeniedOnce = preciseDeniedOnce && approx
             if (!forSearch) on = true
             save()
-            if (upgrade && approx && !a.shouldShowRequestPermissionRationale(FINE)) openAppInfo(a)
+            if (upgrade && preciseBlocked) openAppInfo(a)
             if (forSearch) searchHere() else locate()
         } else {
-            // No rationale after a denial means "don't ask again": the dialog won't show any more.
-            blocked = !a.shouldShowRequestPermissionRationale(FINE)
+            blocked = refused(deniedOnce)
+            deniedOnce = true
             save()
         }
         changed(false)
@@ -230,12 +306,16 @@ object Here {
     fun menu(p: Place) {
         val a = host as? Activity ?: return
         val items = ArrayList<Pair<Int, () -> Unit>>()
-        items += R.string.make_hometown to { host?.makeHometown((here ?: p).plain()) }
-        items += R.string.here_save_city to { host?.saveCity((here ?: p).plain()) }
+        items += R.string.make_hometown to { toKeep(here ?: p) { host?.makeHometown(it) } }
+        items += R.string.here_save_city to { toKeep(here ?: p) { host?.saveCity(it) } }
         if (approximate()) {
             items += R.string.here_precise to {
-                upgrading = true
-                request(forSearch = false)
+                if (preciseBlocked) {
+                    openAppInfo(a)
+                } else {
+                    upgrading = true
+                    request(forSearch = false)
+                }
             }
         }
         items += (if (names) R.string.here_names_off else R.string.here_names_on) to {
@@ -265,6 +345,7 @@ object Here {
     }
 
     fun resetForTest() {
+        unwatchMode()
         locator?.stop()
         main.removeCallbacksAndMessages(null)
         io.shutdownNow()
@@ -279,6 +360,8 @@ object Here {
         loaded = false
         swept = false
         resumed = false
+        revokeOnLeave = false
+        revoked = false
         clear()
         Nominatim.fetch = Nominatim::http
     }
@@ -293,6 +376,9 @@ object Here {
                 val a = c.applicationContext
                 runCatching { JSONObject(File(a.noBackupFilesDir, STATE).readText()) }.getOrNull()?.let { o ->
                     blocked = o.optBoolean("blocked")
+                    preciseBlocked = o.optBoolean("preciseBlocked")
+                    deniedOnce = o.optBoolean("deniedOnce")
+                    preciseDeniedOnce = o.optBoolean("preciseDeniedOnce")
                     names = o.optBoolean("names", true)
                     fixAt = o.optLong("fixAt")
                     failAt = o.optLong("failAt")
@@ -310,7 +396,8 @@ object Here {
     private fun save() {
         val c = app ?: return
         val text = JSONObject()
-            .put("on", on).put("blocked", blocked).put("names", names)
+            .put("on", on).put("blocked", blocked).put("preciseBlocked", preciseBlocked).put("names", names)
+            .put("deniedOnce", deniedOnce).put("preciseDeniedOnce", preciseDeniedOnce)
             .put("fixAt", fixAt).put("failAt", failAt).put("approx", approx)
             .apply { here?.let { put("place", it.toJson()) } }
             .toString()
@@ -321,6 +408,9 @@ object Here {
         on = false
         here = null
         blocked = false
+        preciseBlocked = false
+        deniedOnce = false
+        preciseDeniedOnce = false
         names = true
         fixAt = 0
         failAt = 0
@@ -332,6 +422,7 @@ object Here {
         fromWidget = false
         askedForSearch = false
         upgrading = false
+        askedRationale = false
         searching = false
         searchStatus = null
         searchSeq++
@@ -345,35 +436,51 @@ object Here {
         }
     }
 
-    /** "Stop using location": forgets everything and, on Android 13+, gives the permission back. */
+    /**
+     * "Stop using location": forgets everything and, on Android 13+, gives the permission back once the app is
+     * left with location still off ([left]). It can't be taken back once asked for, and until the system kills
+     * the app the permission still reads as granted, so a change of mind before leaving keeps it.
+     */
     private fun stopUsing() {
         val c = app ?: return
         locator?.stop()
         cancelStart()
         val old = here
+        // What the dialog said last still holds: without it, a refused request could no longer lead to App info.
+        // So does "Don't look up place names": a privacy choice isn't undone by stopping.
+        val keep = booleanArrayOf(blocked, preciseBlocked, deniedOnce, preciseDeniedOnce, names)
         clear()
         io.execute {
             File(c.noBackupFilesDir, STATE).delete()
             sweep(c)
         }
+        blocked = keep[0]
+        preciseBlocked = keep[1]
+        deniedOnce = keep[2]
+        preciseDeniedOnce = keep[3]
+        names = keep[4]
+        if (blocked || preciseBlocked || deniedOnce || preciseDeniedOnce || !names) save()
         net.execute {
+            (cache ?: Names(File(c.noBackupFilesDir, NAMES))).forget()
             cache = null
-            File(c.noBackupFilesDir, NAMES).delete()
         }
         old?.let { Repo.get(c).forget(it) }
         Widgets.update(c)
-        if (Build.VERSION.SDK_INT >= 33) runCatching { c.revokeSelfPermissionsOnKill(listOf(FINE, COARSE)) }
+        revokeOnLeave = Build.VERSION.SDK_INT >= 33
         changed(true)
     }
 
     // ---- Permission -------------------------------------------------------------------------------------
 
-    private fun has(permission: String) = app?.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    private fun has(permission: String) = !revoked && app?.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     /** FINE and COARSE together: some Android 12 builds ignore FINE alone. */
     private fun request(forSearch: Boolean) {
         val a = host as? Activity ?: return
+        // Given back but still granted: the dialog wouldn't show, and the grant ends when the app is killed.
+        if (revoked) return Toast.makeText(a, R.string.here_given_back, Toast.LENGTH_LONG).show()
         askedForSearch = forSearch
+        askedRationale = a.shouldShowRequestPermissionRationale(FINE)
         a.requestPermissions(arrayOf(FINE, COARSE), REQUEST_LOCATION)
     }
 
@@ -406,6 +513,12 @@ object Here {
     private fun cancelStart() {
         main.removeCallbacks(starter)
         (host as? Activity)?.window?.decorView?.removeCallbacks(starter)
+    }
+
+    private fun unwatchMode() {
+        if (!watchingMode) return
+        watchingMode = false
+        runCatching { app?.unregisterReceiver(modeReceiver) }
     }
 
     private fun loc(): Locator = locator ?: Locator(app!!, ::fixed, ::slowed, ::ended).also { locator = it }
@@ -478,8 +591,11 @@ object Here {
 
     /** Retries a place that only got its coordinates, e.g. while offline (the cache backs off by itself). */
     private fun nameIfUnnamed(p: Place) {
-        if (p.area == Geo.coords(p.lat, p.lon)) name(p)
+        if (unnamed(p)) name(p)
     }
+
+    /** Only its coordinates: My location's fallback ("My location", coordinates) or a place saved from it, by [named]. */
+    private fun unnamed(p: Place) = Geo.coords(p.lat, p.lon).let { p.area == it || p.name == it }
 
     private fun name(p: Place) {
         val c = app ?: return
@@ -496,10 +612,7 @@ object Here {
 
     /** Calls [done] on the main thread with the best name for a rounded spot; never fails. */
     private fun lookup(c: Context, lat: Double, lon: Double, done: (String, String) -> Unit) {
-        val near = Store.get(c).allPlaces
-            .map { it to Geo.distanceM(lat, lon, it.lat, it.lon) }
-            .filter { it.second <= 3000 }
-            .minByOrNull { it.second }?.first
+        val near = nearSaved(c, lat, lon)
         if (near != null) return done(near.name, near.area)
         val lang = Locale.getDefault().language.ifEmpty { "en" }
         val network = names
@@ -510,6 +623,44 @@ object Here {
             val (name, area) = cached.lookup(lat, lon, lang, network) ?: fallback
             handler.post { done(name, area) }
         }
+    }
+
+    /** The closest saved place within 3 km that has a name of its own: one known only by its coordinates names nothing. */
+    private fun nearSaved(c: Context, lat: Double, lon: Double): Place? =
+        Store.get(c).allPlaces
+            .filter { !unnamed(it) }
+            .map { it to Geo.distanceM(lat, lon, it.lat, it.lon) }
+            .filter { it.second <= 3000 }
+            .minByOrNull { it.second }?.first
+
+    /**
+     * An ordinary place for the spot, to save: named by [lookup] within [NAMING_MS], else by its coordinates
+     * (never "My location", which would be a second one, and would name My location after itself from then on).
+     */
+    private fun named(c: Context, lat: Double, lon: Double, done: (Place) -> Unit) {
+        var waiting = true
+        fun finish(name: String, area: String) {
+            if (!waiting) return
+            waiting = false
+            val coords = Geo.coords(lat, lon)
+            done(if (area == coords) Place(coords, "", lat, lon) else Place(name, area, lat, lon))
+        }
+        val guard = Runnable { finish("", Geo.coords(lat, lon)) }
+        main.postDelayed(guard, NAMING_MS)
+        lookup(c, lat, lon) { name, area ->
+            main.removeCallbacks(guard)
+            finish(name, area)
+        }
+    }
+
+    /**
+     * My location as the hometown or a city: the saved place it is named after, which keeps one row per town, or
+     * itself as an ordinary place once it has a name.
+     */
+    private fun toKeep(p: Place, done: (Place) -> Unit) {
+        val c = app ?: return
+        nearSaved(c, p.lat, p.lon)?.let { return done(it) }
+        if (unnamed(p)) named(c, p.lat, p.lon, done) else done(p.plain())
     }
 
     // ---- Search page ------------------------------------------------------------------------------------
@@ -530,13 +681,10 @@ object Here {
         val seq = ++searchSeq
         val lat = Geo.round2(f.lat)
         val lon = Geo.round2(f.lon)
+        // Near a saved place, that place itself: its name at another spot would be listed twice.
+        nearSaved(c, lat, lon)?.let { return pickForSearch(seq, it) }
         searchStatus = c.getString(R.string.here_naming)
-        val guard = Runnable { pickForSearch(seq, Place(c.getString(R.string.here_name), Geo.coords(lat, lon), lat, lon)) }
-        main.postDelayed(guard, NAMING_MS)
-        lookup(c, lat, lon) { name, area ->
-            main.removeCallbacks(guard)
-            pickForSearch(seq, Place(name, area, lat, lon))
-        }
+        named(c, lat, lon) { pickForSearch(seq, it) }
     }
 
     private fun pickForSearch(seq: Int, p: Place) {

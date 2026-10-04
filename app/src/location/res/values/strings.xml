@@ -30,5 +30,6 @@
     <string name="here_names_off">Don\'t look up place names</string>
     <string name="here_names_on">Look up place names</string>
     <string name="here_stop">Stop using location</string>
+    <string name="here_given_back">Location access was given back. Close Weather+ for a while, then allow it again.</string>
     <string name="widget_here">My location</string>
 </resources>

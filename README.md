@@ -79,8 +79,8 @@ own settings.
 - **Radar** marks your position with a dot, and a shaded circle when it's only known roughly; ◎ centres the map
   on it.
 - The **widget** (Widgets → **Weather+**) can show My location: pick it under **Reconfigure**.
-- Choosing a hometown or adding a city offers **Use my location** too. It picks the town you're in, without
-  turning My location on.
+- Choosing a hometown or adding a city offers **Use my location** too. It picks the town you're in (or the saved
+  place you're within 3 km of), without turning My location on.
 - Indoors GPS may not find you. Android's network location (Settings › Location › Location services) helps.
 
 <p>
@@ -106,14 +106,16 @@ It never uses it in the background, and the widget never locates: it shows the l
   (the widget's background refresh included).
 - **nominatim.openstreetmap.org** (OpenStreetMap Foundation) receives the rounded position and your language to
   look up the place name. This happens only for a ~1 km area that isn't within 3 km of a saved place and hasn't
-  been looked up recently. You can switch it off with "Don't look up place names". Both services also see your IP
-  address.
+  been looked up recently. You can switch it off with "Don't look up place names" (touch & hold My location in
+  Cities); that covers the search page's "Use my location" too, and stays off after "Stop using location". Both
+  services also see your IP address.
 - Radar tiles come from `rainviewer.com` and `tile.openstreetmap.org`, as in Weather. ◎ centres the map on your
   position; even at the closest zoom a tile covers several kilometres.
 - Precise and approximate location are rounded the same way before anything leaves the phone. Approximate is
   already blurred by Android (to about 2 km), so its rounded spot may be a neighbouring one.
-- "Stop using location" (touch & hold My location in Cities) erases all of this, and on Android 13+ also gives
-  the permission back once you leave the app. A hometown or city you saved from My location stays.
+- "Stop using location" (touch & hold My location in Cities) erases all of this but your place-name choice and
+  any pause Nominatim asked for, and on Android 13+ also gives the permission back once you leave the app, unless
+  you turned My location back on first. A hometown or city you saved from My location stays.
 
 ## Getting the APK
 

@@ -5,9 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.Looper
 import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -17,9 +20,16 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowAlertDialog
+import org.robolectric.shadows.ShadowToast
 import java.io.File
+import java.net.UnknownHostException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Weather+'s My location through the real activity: the welcome screen, the header, Cities, Radar and Search, with
@@ -222,6 +232,52 @@ class HereUiTest : HereFixture() {
         assertTrue(a.findViewById<View>(R.id.search_here).isEnabled)
     }
 
+    /** "Use my location" given up on with back: a later fix must not land in the next search, e.g. Change hometown. */
+    @Test
+    fun abandonedSearchRowPicksNothingLater() {
+        seed()
+        grant(FINE, COARSE)
+        val a = launch().get()
+        a.tapInCities("Add city")
+        a.click(R.id.search_here)
+        assertEquals(1, listeners().size)
+        @Suppress("DEPRECATION") a.onBackPressed()
+        idle()
+        assertTrue("My location is off: the search's attempt stops with the page", listeners().isEmpty())
+
+        a.click(R.id.tab_cities)
+        a.cityRow(0).performLongClick() // the hometown
+        idle()
+        ShadowAlertDialog.getLatestAlertDialog().pick("Change hometown")
+        assertTrue(a.visible(R.id.page_search))
+        assertTrue(a.findViewById<View>(R.id.search_here).isEnabled)
+        assertEquals(app.getString(R.string.search_help), a.text(R.id.search_status))
+        simulate(41.8781, -87.6298, 9f)
+        idleFor(15_000) // past the naming guard
+        assertTrue(a.visible(R.id.page_search))
+        assertEquals(TestData.home, Store.get(app).home)
+        assertEquals(listOf("Paris", "Tokyo"), Store.get(app).cities.map { it.name })
+    }
+
+    /** Leaving the app stops the search page's "Use my location"; coming back, the page doesn't say it's locating. */
+    @Test
+    fun searchRowStatusClearedAfterPause() {
+        seed()
+        grant(FINE, COARSE)
+        val c = launch()
+        val a = c.get()
+        a.tapInCities("Add city")
+        a.click(R.id.search_here)
+        assertEquals("Locating…", a.text(R.id.search_status))
+        c.pause()
+        assertTrue(listeners().isEmpty())
+        c.resume()
+        idle()
+        assertTrue(a.visible(R.id.page_search))
+        assertEquals(app.getString(R.string.search_help), a.text(R.id.search_status))
+        assertTrue(a.findViewById<View>(R.id.search_here).isEnabled)
+    }
+
     @Test
     fun stopErasesAndResetsWidgets() {
         seed()
@@ -261,6 +317,47 @@ class HereUiTest : HereFixture() {
         assertNull(asked(a))
     }
 
+    /**
+     * The permission is given back only once the app is left with location still off: Android can't cancel it,
+     * and it stays granted until the app is killed, so turning it back on before then would silently fail later.
+     */
+    @Test
+    fun stopGivesPermissionBackOnLeave() {
+        seed()
+        grant(FINE, COARSE)
+        val c = launch()
+        val a = c.get()
+        a.useLocation(41.8781, -87.6298, 9f, "Chicago")
+        a.stopUsing()
+        assertEquals("not while the app is open", 0, givenBack())
+
+        // A change of mind before leaving: back on, and nothing is given back.
+        a.useLocation(41.8781, -87.6298, 9f, "Chicago")
+        c.pause().stop()
+        idle()
+        assertEquals(0, givenBack())
+
+        // Stopped and left: given back.
+        c.restart().resume()
+        idle()
+        a.stopUsing()
+        c.pause().stop()
+        idle()
+        assertEquals(1, givenBack())
+
+        // Back before Android has killed the app: still granted, but it isn't used, and nothing turns on.
+        c.restart().resume()
+        idle()
+        a.tapInCities("Use my location")
+        assertNull("no dialog", asked(a))
+        assertTrue(listeners().isEmpty())
+        assertNull(Here.place(app))
+        assertEquals(app.getString(R.string.here_given_back), ShadowToast.getTextOfLatestToast())
+    }
+
+    /** Requests to the permission controller, which is what revokeSelfPermissionsOnKill binds to. */
+    private fun givenBack(): Int = shadowOf(app).boundServiceConnections.size
+
     @Test
     fun savedStateKeepsHereDefault() {
         val chicago = Place("Chicago", "Illinois, United States", 41.88, -87.63, here = true)
@@ -290,7 +387,85 @@ class HereUiTest : HereFixture() {
         assertTrue(lookups.isEmpty())
     }
 
+    /** Stop while My location's forecast and Cities row are still loading: neither comes back when they arrive. */
+    @Test
+    fun stopWhileLoadingLeavesNothing() {
+        seed()
+        grant(FINE, COARSE)
+        val a = launch().get()
+        a.useLocation(41.8781, -87.6298, 9f, "Chicago")
+        val key = "here_41.880_-87.630"
+        val forecast = File(forecasts, "$key.json")
+        assertTrue(forecast.exists())
+
+        val fetching = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        OpenMeteo.fetch = { url ->
+            fetching.countDown()
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+            if (url.endsWith("forecast_days=1")) summariesFor(url) else TestData.forecastJson(System.currentTimeMillis())
+        }
+        a.click(R.id.tab_now)
+        a.click(R.id.refresh)
+        a.click(R.id.tab_cities)
+        // Cities may still be loading My location's first summary, and Repo skips a refresh while it loads:
+        // refresh until the held summaries fetch has started too.
+        val end = System.nanoTime() + 5_000_000_000
+        while (fetching.count > 0 && System.nanoTime() < end) {
+            a.click(R.id.refresh)
+            Thread.sleep(50)
+        }
+        assertEquals(0, fetching.count)
+
+        a.stopUsing()
+        waitForGone(forecast)
+        release.countDown()
+        settleRepo()
+        assertFalse(forecast.exists())
+        assertFalse(JSONObject(File(app.cacheDir, "summaries.json").readText()).has(key))
+        assertNull(Repo.get(app).summary(Place("", "", 41.88, -87.63, here = true)))
+    }
+
+    /** After a move, the last spot's forecast stands in only while the new one loads: not if that load fails. */
+    @Test
+    fun failedLoadAfterMoveDropsOldForecast() {
+        seed()
+        seedHere(fixAgoMs = 20 * MIN)
+        grant(FINE, COARSE)
+        val release = CountDownLatch(1)
+        OpenMeteo.fetch = {
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+            throw UnknownHostException()
+        }
+        val a = launch().get()
+        assertFalse(a.visible(R.id.status))
+        simulate(40.5, -89.64, 20f) // some 80 km north, where nothing is cached
+        assertEquals("here_40.500_-89.640", Here.place(app)?.key)
+        assertEquals("Updating…", a.text(R.id.subtitle))
+        assertFalse(a.visible(R.id.status))
+
+        release.countDown()
+        waitFor { a.visible(R.id.status) }
+        assertEquals("Offline", a.text(R.id.status))
+        assertEquals("ic_here_small", a.titleMark())
+        a.click(R.id.tab_daily)
+        assertEquals("Offline", a.text(R.id.status))
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------------
+
+    /** A summaries answer with a row for each place asked for. */
+    private fun summariesFor(url: String): String {
+        val n = url.substringAfter("latitude=").substringBefore('&').split(',').size
+        val row = JSONArray(javaClass.classLoader!!.getResource("summaries.json")!!.readText()).getJSONObject(0)
+        return JSONArray().apply { repeat(n) { put(row) } }.toString()
+    }
+
+    /** Waits until Repo's background work, and what it posts back to the main thread, is all done. */
+    private fun settleRepo() {
+        val io = Repo::class.java.getDeclaredField("io").apply { isAccessible = true }.get(Repo.get(app)) as ThreadPoolExecutor
+        waitFor { io.completedTaskCount == io.taskCount && shadowOf(Looper.getMainLooper()).isIdle }
+    }
 
     /** The name of the drawable next to the header's title ("" for none), told apart by drawing it. */
     private fun Activity.titleMark(): String {

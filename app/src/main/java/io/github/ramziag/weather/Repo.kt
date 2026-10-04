@@ -9,6 +9,7 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Forecast cache and loader. Every forecast is kept in memory and on disk, so the app opens instantly
@@ -33,9 +34,12 @@ class Repo private constructor(context: Context) {
     private val forecasts = HashMap<String, Forecast>()
     private val summaries = HashMap<String, Summary>()
     private val busy = HashSet<String>()
+    /** Keys [forget] dropped: a fetch already running for one of them must not bring it back. */
+    private val gone = HashSet<String>()
     private var summariesBusy = false
     private var summariesFromDisk = false
     private var radarBusy = false
+    private val summariesText = AtomicReference<String?>()
 
     /** Latest list of radar frames (memory only; it's tiny and goes stale in minutes). */
     var radarMaps: Radar.Maps? = null
@@ -47,6 +51,7 @@ class Repo private constructor(context: Context) {
 
     fun loadForecast(place: Place, force: Boolean) {
         val key = place.key
+        gone -= key
         val mem = forecasts[key]
         if (mem != null && !force && mem.isFresh()) return
         if (!busy.add(key)) return
@@ -55,7 +60,7 @@ class Repo private constructor(context: Context) {
             if (mem == null) {
                 val disk = ForecastFiles.read(file)
                 if (disk != null) {
-                    main.post { if (forecasts[key] == null) publish(place, disk) }
+                    main.post { if (forecasts[key] == null && key !in gone) publish(place, disk) }
                     if (!force && disk.isFresh()) {
                         main.post { busy.remove(key) }
                         return@execute
@@ -67,8 +72,12 @@ class Repo private constructor(context: Context) {
                 ForecastFiles.write(file, forecast.fetchedAt, body)
                 main.post {
                     busy.remove(key)
-                    publish(place, forecast)
-                    Widgets.update(app)
+                    if (key in gone) {
+                        io.execute { file.delete() }
+                    } else {
+                        publish(place, forecast)
+                        Widgets.update(app)
+                    }
                 }
             } catch (e: Exception) {
                 main.post {
@@ -86,6 +95,7 @@ class Repo private constructor(context: Context) {
     }
 
     fun loadSummaries(places: List<Place>, force: Boolean) {
+        places.forEach { gone -= it.key }
         if (places.isEmpty() || summariesBusy) return
         val now = System.currentTimeMillis()
         val stale = places.filter { force || summaries[it.key]?.isFresh(now) != true }
@@ -97,7 +107,12 @@ class Repo private constructor(context: Context) {
             if (readDisk) {
                 main.post {
                     summariesFromDisk = true
-                    for ((k, s) in disk) if ((summaries[k]?.fetchedAt ?: 0) < s.fetchedAt) summaries[k] = s
+                    var dropped = false
+                    for ((k, s) in disk) {
+                        if (leftBehind(k)) dropped = true
+                        else if (k !in gone && (summaries[k]?.fetchedAt ?: 0) < s.fetchedAt) summaries[k] = s
+                    }
+                    if (dropped) saveSummaries()
                     if (disk.isNotEmpty()) listener?.onSummaries(null)
                 }
             }
@@ -110,7 +125,7 @@ class Repo private constructor(context: Context) {
                 val fresh = OpenMeteo.fetchSummaries(todo)
                 main.post {
                     summariesBusy = false
-                    todo.zip(fresh).forEach { (p, s) -> summaries[p.key] = s }
+                    todo.zip(fresh).forEach { (p, s) -> if (p.key !in gone) summaries[p.key] = s }
                     saveSummaries()
                     listener?.onSummaries(null)
                 }
@@ -155,8 +170,9 @@ class Repo private constructor(context: Context) {
         }
     }
 
-    /** Drops cached data for a city the user removed. */
+    /** Drops cached data for a city the user removed, and keeps it dropped until the place is loaded again. */
     fun forget(place: Place) {
+        gone += place.key
         forecasts.remove(place.key)
         summaries.remove(place.key)
         val file = ForecastFiles.file(app, place)
@@ -175,17 +191,29 @@ class Repo private constructor(context: Context) {
         }
     }.getOrDefault(emptyMap())
 
+    /**
+     * Weather+: a My location spot (see [Place.key]) that isn't the current one was left behind by a move or
+     * "Stop using location", e.g. when the app was killed before forgetting it. Never kept on disk.
+     */
+    private fun leftBehind(key: String) = key.startsWith("here_") && key != Here.place(app)?.key
+
     private fun saveSummaries() {
         val o = JSONObject()
         for ((k, s) in summaries) {
+            if (leftBehind(k)) continue
             o.put(
                 k,
                 JSONObject().put("code", s.code).put("day", s.isDay).put("at", s.fetchedAt)
                     .putFinite("temp", s.temp).putFinite("max", s.max).putFinite("min", s.min),
             )
         }
-        val text = o.toString()
-        io.execute { runCatching { ForecastFiles.writeAtomic(summaryFile, text) } }
+        // Saves can overlap on the pool: each writes the newest text, so an older one never lands last.
+        summariesText.set(o.toString())
+        io.execute {
+            synchronized(summaryFile) {
+                summariesText.getAndSet(null)?.let { runCatching { ForecastFiles.writeAtomic(summaryFile, it) } }
+            }
+        }
     }
 
     private fun JSONObject.putFinite(key: String, v: Double): JSONObject = if (v.isNaN()) this else put(key, v)
