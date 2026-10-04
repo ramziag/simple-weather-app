@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Weather+ wording for strings the original app also has. -->
+    <string name="app_name">Weather+</string>
+    <string name="attribution">Weather data by Open-Meteo.com (CC BY 4.0) · Place names ©\u00A0OpenStreetMap contributors</string>
+    <string name="welcome">See the weather where you are, or pick a hometown.\nYour exact position stays on this phone.</string>
+    <string name="widget_no_home">Open Weather+ to choose a hometown or use your location</string>
+    <string name="widget_description">Current weather, the next hours and days for your location, hometown or a saved city</string>
+    <string name="recenter">My location</string>
+
+    <!-- "My location": the place the phone is at. -->
+    <string name="here_use">Use my location</string>
+    <string name="here_hint">Only a rounded spot (about 1 km) leaves the phone.</string>
+    <string name="here_name">My location</string>
+    <string name="here_back">Back to my location</string>
+    <string name="here_allow">Allow location</string>
+    <string name="here_settings">Allow in Settings</string>
+    <string name="here_turn_on">Turn on location</string>
+    <string name="here_locating">Locating…</string>
+    <string name="here_slow">Still locating…</string>
+    <string name="here_approx">approximate</string>
+    <string name="here_off">Location is off</string>
+    <string name="here_denied">Location not allowed</string>
+    <string name="here_no_update">No new fix</string>
+    <string name="here_no_fix">Couldn\'t find your location. GPS works best outdoors; Network location (Settings › Location › Location services) helps indoors.</string>
+    <string name="here_try_again">Try again</string>
+    <string name="here_naming">Finding place name…</string>
+    <string name="here_precise">Use precise location</string>
+    <string name="here_save_city">Save as city</string>
+    <string name="here_names_off">Don\'t look up place names</string>
+    <string name="here_names_on">Look up place names</string>
+    <string name="here_stop">Stop using location</string>
+    <string name="widget_here">My location</string>
+</resources>

@@ -24,6 +24,21 @@
         android:textColor="?attr/wText"
         android:textSize="17sp" />
 
+    <!-- Weather+ only: "Use my location"; set from code. -->
+    <TextView
+        android:id="@+id/search_here"
+        style="@style/Text"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="4dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:drawablePadding="12dp"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:textSize="17sp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/search_status"
         style="@style/Text.Sub"

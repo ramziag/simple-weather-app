@@ -2,11 +2,14 @@
 
 A small, fast Android weather app: current conditions for your hometown, hourly and 10-day forecasts,
 an animated precipitation radar, and a list of saved cities. Pastel themes, line icons, no clutter.
+It comes as two apps built from the same code: **Weather**, described first, and
+[**Weather+**](#weather-my-location), which can also show the weather where you are.
 
 - **No API key, no account.** Forecasts come from [Open-Meteo](https://open-meteo.com) (free, CC BY 4.0);
   radar from [RainViewer](https://www.rainviewer.com/api.html) (free for personal use) over
   [OpenStreetMap](https://www.openstreetmap.org/copyright) map tiles.
-- **No location permission.** You pick your hometown by name or postal code; it's remembered on the device.
+- **No location permission** in Weather. You pick your hometown by name or postal code; it's remembered on
+  the device. (Weather+ asks for location only when you tap "Use my location"; see [below](#weather-my-location).)
 - **One permission:** Internet. Forecasts and city searches go to `open-meteo.com`. Only when you open the
   Radar tab, the app also fetches radar frames from `rainviewer.com` and map tiles from
   `tile.openstreetmap.org` (those reveal roughly which area you're looking at). Nothing else.
@@ -62,16 +65,68 @@ beyond: the current conditions always, the next hours when it's wide, the next d
   <img src="docs/screenshots/w-dusk-large.png" width="225" alt="Widget at 4×3 in the Dusk theme">
 </p>
 
+## Weather+ (My location)
+
+**Weather+** is the same app plus **My location**: the weather where you are, next to your hometown and saved
+cities. It's a separate app (`io.github.ramziag.weather.location`) that installs alongside Weather and keeps its
+own settings.
+
+- Tap **Use my location** on the first screen or in **Cities**, and allow precise or approximate location.
+  Now, Hourly, 10-Day and Radar then show My location, named after the town you're in, and it's updated
+  while the app is open. While it locates, or when it can't, the header says so ("Locating…", "Location is off").
+- **Cities** lists My location first. Touch & hold it to make it your hometown, save it as a city, switch to
+  precise location, turn off place-name lookups, or stop using location.
+- **Radar** marks your position with a dot, and a shaded circle when it's only known roughly; ◎ centres the map
+  on it.
+- The **widget** (Widgets → **Weather+**) can show My location: pick it under **Reconfigure**.
+- Choosing a hometown or adding a city offers **Use my location** too. It picks the town you're in, without
+  turning My location on.
+- Indoors GPS may not find you. Android's network location (Settings › Location › Location services) helps.
+
+<p>
+  <img src="docs/screenshots/here-welcome.png" width="160" alt="Weather+ first screen with Use my location">
+  <img src="docs/screenshots/here-now.png" width="160" alt="Now tab on My location">
+  <img src="docs/screenshots/here-cities.png" width="160" alt="Cities with My location first">
+  <img src="docs/screenshots/here-widget.png" width="225" alt="Widget showing My location">
+</p>
+
+### Privacy
+
+**Weather** never accesses your location. It has no location permission and no location code, and CI checks
+both.
+
+**Weather+** uses your location only after you tap "Use my location", and only while the app is open on screen.
+It never uses it in the background, and the widget never locates: it shows the last place the app found.
+
+- Your exact position is kept in memory only, for the radar's dot. It is never stored or sent anywhere.
+- The phone stores, excluded from backups: the position rounded to 0.01° (about 1 km) with its name and
+  forecast, when it last located, whether that was precise, and up to 20 place names with their rounded
+  positions, so each spot is looked up once.
+- **open-meteo.com** receives the rounded position to fetch its forecast, just as it does for a saved city
+  (the widget's background refresh included).
+- **nominatim.openstreetmap.org** (OpenStreetMap Foundation) receives the rounded position and your language to
+  look up the place name. This happens only for a ~1 km area that isn't within 3 km of a saved place and hasn't
+  been looked up recently. You can switch it off with "Don't look up place names". Both services also see your IP
+  address.
+- Radar tiles come from `rainviewer.com` and `tile.openstreetmap.org`, as in Weather. ◎ centres the map on your
+  position; even at the closest zoom a tile covers several kilometres.
+- Precise and approximate location are rounded the same way before anything leaves the phone. Approximate is
+  already blurred by Android (to about 2 km), so its rounded spot may be a neighbouring one.
+- "Stop using location" (touch & hold My location in Cities) erases all of this, and on Android 13+ also gives
+  the permission back once you leave the app. A hometown or city you saved from My location stays.
+
 ## Getting the APK
 
-Every push builds a signed release APK in GitHub Actions.
+Every push builds signed release APKs of both apps in GitHub Actions.
 
 1. Open the repo's **Actions** tab → **Build** → **Run workflow** (leave "Publish … release" ticked).
-2. When it finishes, the APK is on the **Releases** page. Open it on the phone, download, and install
-   (allow "Install unknown apps" for your browser when asked).
+2. When it finishes, the APKs are on the **Releases** page: `weather-1.0.N.apk` is Weather and
+   `weather-location-1.0.N.apk` is Weather+. Open the one you want on the phone, download, and install (allow
+   "Install unknown apps" for your browser when asked).
 
-Each run also attaches the APK as a workflow artifact. To get updates automatically, point
-[Obtainium](https://github.com/ImranR98/Obtainium) at this repository's releases.
+Each run also attaches the APKs as workflow artifacts. To get updates automatically, point
+[Obtainium](https://github.com/ImranR98/Obtainium) at this repository's releases and set its APK filter regex to
+`^weather-1\.` for Weather or `^weather-location-` for Weather+ (add the repository twice for both).
 
 ### Signing
 
@@ -92,15 +147,19 @@ uninstalling the old build once.
 Needs JDK 17+ and the Android SDK (Android Studio, or `ANDROID_HOME` set).
 
 ```sh
-./gradlew assembleRelease                # app/build/outputs/apk/release/app-release.apk
-./gradlew testDebugUnitTest              # unit + UI tests; screenshots land in app/build/screenshots
-LIVE_API=1 ./gradlew testDebugUnitTest   # also checks the live Open-Meteo API
-adb install -r app/build/outputs/apk/release/app-release.apk
+./gradlew assembleStandardRelease        # Weather: app/build/outputs/apk/standard/release/app-standard-release.apk
+./gradlew assembleLocationRelease        # Weather+: app/build/outputs/apk/location/release/app-location-release.apk
+./gradlew test                           # unit + UI tests of both apps; screenshots land in app/build/screenshots
+LIVE_API=1 ./gradlew test                # also checks the live Open-Meteo API
+adb install -r app/build/outputs/apk/standard/release/app-standard-release.apk
 ```
+
+Shared code reaches Weather+'s location code only through `Here`, which each app defines separately;
+`./gradlew test` compiles both, so run it after changing either one.
 
 ## Code map
 
-All code is in `app/src/main/java/io/github/ramziag/weather/`:
+Shared code is in `app/src/main/java/io/github/ramziag/weather/`:
 
 - `MainActivity.kt` — the single screen: header, tabs, pages, search.
 - `OpenMeteo.kt` — forecast and search URLs and JSON parsing (pure JVM, unit tested).
@@ -113,3 +172,20 @@ All code is in `app/src/main/java/io/github/ramziag/weather/`:
 - `Store.kt` — saved hometown, cities, units and theme; theme list.
 - `Forecast.kt`, `Place.kt`, `Fmt.kt`, `Wmo.kt`, `RangeBar.kt`, `Http.kt` — models, formatting, weather
   codes, the 10-day temperature bar, HTTP helper.
+- `HereHost.kt` — what Weather+'s My location (`Here`) needs from the screen, its buttons and constants. Shared code
+  uses `Here` only inside `if (Here.ENABLED)`.
+
+Each app has its own `Here`, with the same functions:
+
+- `app/src/standard/` — Weather: `Here.kt` does nothing (`ENABLED = false`); no location permission or code.
+- `app/src/location/` — Weather+: the location permissions (`AndroidManifest.xml`), its name, wording and icons
+  (`res/`), and in `java/…`:
+  - `Here.kt` — My location: the permission flow, when to locate, the rounded place and its name, its saved state
+    (`here.json`), buttons and menu.
+  - `Locator.kt` — one location attempt with Android's `LocationManager`, and the pure `Geo` rules (rounding,
+    distance, which fix to use).
+  - `Nominatim.kt` — place names from OpenStreetMap's Nominatim (URL and parsing, pure JVM, unit tested) and their
+    cache (`names.json`) with its request limits.
+
+Tests in `app/src/test` run for both apps; `src/testStandard` checks that Weather has no location permission, and
+`src/testLocation` holds Weather+'s.

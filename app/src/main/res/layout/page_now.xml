@@ -112,6 +112,22 @@
             android:lineSpacingExtra="4dp"
             android:text="@string/welcome" />
 
+        <!-- Weather+ only: "Use my location" and a line under it; set from code. -->
+        <TextView
+            android:id="@+id/use_location"
+            style="@style/PillButton"
+            android:layout_marginTop="28dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/use_location_hint"
+            style="@style/Text.Sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/choose_home"
             style="@style/PillButton"

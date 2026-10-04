@@ -22,6 +22,22 @@ android {
         versionName = "1.0.$buildNumber"
     }
 
+    // Two apps from one codebase. "standard" is the original: no location permission and no location
+    // code (src/standard holds no-op stand-ins). "location" adds precise location through its own
+    // manifest, code, strings and launcher label in src/location, and its own package so both install
+    // side by side. Both share versionName, so one release tag describes either app.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("standard") {
+            dimension = "edition"
+            isDefault = true
+        }
+        create("location") {
+            dimension = "edition"
+            applicationIdSuffix = ".location"
+        }
+    }
+
     signingConfigs {
         // Committed on purpose so that local and CI builds can update each other in place.
         getByName("debug") {
@@ -86,7 +102,11 @@ dependencies {
 tasks.withType<Test>().configureEach {
     // LIVE_API=1 also runs the tests that call the real Open-Meteo API (CI does this).
     environment("LIVE_API", providers.environmentVariable("LIVE_API").orElse("").get())
-    systemProperty("screenshots.dir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
+    // Each flavor's tests write their own screenshots: build/screenshots/standard and build/screenshots/location.
+    val shots = layout.buildDirectory.dir(if (name.startsWith("testLocation")) "screenshots/location" else "screenshots/standard")
+    systemProperty("screenshots.dir", shots.get().asFile.absolutePath)
+    // An output, so a test run restored from the build cache brings its screenshots back too.
+    outputs.dir(shots).withPropertyName("screenshots")
     // Robolectric touches JDK internals (file descriptors) that Java 17+ hides by default.
     jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED", "--add-opens=java.base/java.io=ALL-UNNAMED")
     testLogging {

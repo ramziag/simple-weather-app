@@ -80,9 +80,9 @@ object Widgets {
 
     fun build(context: Context, mgr: AppWidgetManager, id: Int, cache: MutableMap<String, Forecast?> = HashMap()): RemoteViews {
         val store = Store.get(context)
-        val chosen = chosenPlace(context, id)
-        val place = chosen ?: store.home
-        val open = openApp(context, id, chosen)
+        val place = placeFor(context, id)
+        val here = Here.ENABLED && chosenRef(context, id) == HERE_MARKER
+        val open = openApp(context, id, if (here) HERE_MARKER else chosenPlace(context, id)?.toJson()?.toString() ?: "")
         val palette = Palette.of(context, store.theme)
         if (place == null) return message(context, R.string.widget_no_home, palette, open)
         val forecast = cache.getOrPut(place.key) { ForecastFiles.read(ForecastFiles.file(context, place)) }
@@ -103,7 +103,7 @@ object Widgets {
     internal fun preview(context: Context, size: Size, place: Place, forecast: Forecast): RemoteViews {
         val store = Store.get(context)
         val fmt = Fmt(store.imperial, DateFormat.is24HourFormat(context))
-        return views(context, size, place, forecast, fmt, Palette.of(context, store.theme), openApp(context, 0, null))
+        return views(context, size, place, forecast, fmt, Palette.of(context, store.theme), openApp(context, 0, ""))
     }
 
     private fun views(
@@ -205,11 +205,14 @@ object Widgets {
         return v
     }
 
-    /** Opens the app on the widget's city (an empty extra means the hometown). One PendingIntent per widget. */
-    private fun openApp(context: Context, id: Int, chosen: Place?): PendingIntent {
+    /**
+     * Opens the app on the widget's city: [ref] is its JSON, empty for the hometown or [HERE_MARKER] for My location.
+     * One PendingIntent per widget.
+     */
+    private fun openApp(context: Context, id: Int, ref: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_PLACE, chosen?.toJson()?.toString() ?: "")
+            .putExtra(EXTRA_PLACE, ref)
         return PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -217,13 +220,31 @@ object Widgets {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** The city a widget was set to, or null if it follows the hometown. */
-    fun chosenPlace(context: Context, id: Int): Place? = prefs(context).getString("place_$id", null)?.let(Place::parse)
+    /** What a widget was set to as stored: a city's JSON, [HERE_MARKER] (Weather+), or null to follow the hometown. */
+    fun chosenRef(context: Context, id: Int): String? = prefs(context).getString("place_$id", null)
+
+    /** The city a widget was set to, or null if it follows the hometown or is set to My location. */
+    fun chosenPlace(context: Context, id: Int): Place? = chosenRef(context, id)?.takeIf { it != HERE_MARKER }?.let(Place::parse)
 
     fun choose(context: Context, id: Int, place: Place?) {
         val e = prefs(context).edit()
         if (place == null) e.remove("place_$id") else e.putString("place_$id", place.toJson().toString())
         e.apply()
+    }
+
+    /** Sets a widget to Weather+'s My location, wherever that is at the time. */
+    fun chooseHere(context: Context, id: Int) {
+        prefs(context).edit().putString("place_$id", HERE_MARKER).apply()
+    }
+
+    /**
+     * What widget [id] shows: its city, else the hometown. In Weather+ also My location, when chosen or when there is
+     * no hometown; null when there is nothing to show.
+     */
+    private fun placeFor(context: Context, id: Int): Place? {
+        if (!Here.ENABLED) return chosenPlace(context, id) ?: Store.get(context).home
+        if (chosenRef(context, id) == HERE_MARKER) return Here.place(context)
+        return chosenPlace(context, id) ?: Store.get(context).home ?: Here.place(context)
     }
 
     fun forget(context: Context, ids: IntArray) {
@@ -242,15 +263,22 @@ object Widgets {
         e.apply()
     }
 
-    fun places(context: Context, ids: IntArray): List<Place> {
-        val home = Store.get(context).home
-        return ids.asList().mapNotNull { chosenPlace(context, it) ?: home }.distinct()
-    }
+    fun places(context: Context, ids: IntArray): List<Place> = ids.asList().mapNotNull { placeFor(context, it) }.distinct()
 
-    /** Widgets set to a city that has since been removed from the app go back to the hometown. */
+    /**
+     * Widgets set to a city that has since been removed from the app go back to the hometown, and so do widgets set
+     * to My location once it is gone ("Stop using location").
+     */
     private fun unpinRemoved(context: Context, ids: IntArray) {
         val kept = Store.get(context).allPlaces.toSet()
-        for (id in ids) if (chosenPlace(context, id)?.let { it !in kept } == true) choose(context, id, null)
+        for (id in ids) {
+            val gone = if (Here.ENABLED && chosenRef(context, id) == HERE_MARKER) {
+                Here.place(context) == null
+            } else {
+                chosenPlace(context, id)?.let { it !in kept } == true
+            }
+            if (gone) choose(context, id, null)
+        }
     }
 
     // ---- Background refresh ------------------------------------------------------------------------------

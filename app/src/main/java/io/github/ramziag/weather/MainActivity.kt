@@ -35,9 +35,10 @@ import java.time.temporal.ChronoUnit
 
 /**
  * The whole app is this one screen: a header, five tab pages (Now, Hourly, 10-Day, Radar, Cities) and a
- * search page. Plain framework views only, so it starts fast and the APK stays tiny.
+ * search page. Plain framework views only, so it starts fast and the APK stays tiny. Weather+'s "My location"
+ * comes in through [Here], only inside `if (Here.ENABLED)`.
  */
-class MainActivity : Activity(), Repo.Listener {
+class MainActivity : Activity(), Repo.Listener, HereHost {
 
     private lateinit var store: Store
     private lateinit var repo: Repo
@@ -50,7 +51,7 @@ class MainActivity : Activity(), Repo.Listener {
     private lateinit var subtitle: TextView
     private lateinit var units: TextView
     private lateinit var refresh: View
-    private lateinit var backHome: View
+    private lateinit var backHome: TextView
     private lateinit var status: TextView
     private lateinit var tabs: LinearLayout
     private lateinit var pages: Array<View>
@@ -58,6 +59,9 @@ class MainActivity : Activity(), Repo.Listener {
     private lateinit var pageSearch: View
     private lateinit var searchInput: EditText
     private lateinit var searchStatus: TextView
+    private lateinit var searchHere: TextView
+    private lateinit var useLocation: TextView
+    private lateinit var useLocationHint: TextView
 
     private lateinit var nowContent: View
     private lateinit var nowEmpty: View
@@ -88,6 +92,9 @@ class MainActivity : Activity(), Repo.Listener {
     private var radarAutoPlay = true
     private var refreshing = false
     private var renderedHour: LocalDateTime? = null
+    private var hadHere = false
+    private var hereSearchText: String? = null
+    private val generation = ++created
 
     /** Pages whose views are out of date; rebuilt lazily when shown. */
     private val dirty = BooleanArray(5) { true }
@@ -100,8 +107,11 @@ class MainActivity : Activity(), Repo.Listener {
 
     private var backCallback: Any? = null
 
-    /** What the Now / Hourly / 10-Day tabs show: a city picked from the list, else the hometown. */
-    private val place: Place? get() = viewing ?: store.home
+    /** Where the forecast tabs go back to: Weather+'s My location once it has been found, else the hometown. */
+    private val defaultPlace: Place? get() = (if (Here.ENABLED) Here.place(this) else null) ?: store.home
+
+    /** What the Now / Hourly / 10-Day tabs show: a city picked from the list, else the default place. */
+    private val place: Place? get() = viewing ?: defaultPlace
 
     // ---- Lifecycle -------------------------------------------------------------------------------------
 
@@ -147,6 +157,9 @@ class MainActivity : Activity(), Repo.Listener {
         pageSearch = findViewById(R.id.page_search)
         searchInput = findViewById(R.id.search_input)
         searchStatus = findViewById(R.id.search_status)
+        searchHere = findViewById(R.id.search_here)
+        useLocation = findViewById(R.id.use_location)
+        useLocationHint = findViewById(R.id.use_location_hint)
         nowContent = findViewById(R.id.now_content)
         nowEmpty = findViewById(R.id.now_empty)
         nowIcon = findViewById(R.id.now_icon)
@@ -170,7 +183,10 @@ class MainActivity : Activity(), Repo.Listener {
         setupRadar()
         units.setOnClickListener { toggleUnits() }
         findViewById<View>(R.id.theme).setOnClickListener { pickTheme() }
-        refresh.setOnClickListener { reload(force = true) }
+        refresh.setOnClickListener {
+            if (Here.ENABLED && place?.here == true) Here.refresh()
+            reload(force = true)
+        }
         backHome.setOnClickListener {
             setPlace(null)
             render()
@@ -181,8 +197,14 @@ class MainActivity : Activity(), Repo.Listener {
         savedInstanceState?.let {
             tab = it.getInt(STATE_TAB, TAB_NOW)
             viewing = it.getString(STATE_VIEWING)?.let(Place::parse)
+            // My location is always the default place, never "viewing": show whatever it is now.
+            if (Here.ENABLED && viewing?.here == true) viewing = null
         }
         repo.listener = this
+        if (Here.ENABLED) {
+            Here.attach(this)
+            hadHere = Here.place(this) != null
+        }
         forecast = place?.let(repo::cached)
         showTab(tab)
         if (savedInstanceState == null) openFromWidget(intent)
@@ -194,12 +216,20 @@ class MainActivity : Activity(), Repo.Listener {
         openFromWidget(intent)
     }
 
-    /** A widget tap carries the widget's city (empty = hometown): show it on the Now tab. */
+    /** A widget tap carries the widget's city (empty = hometown; Weather+: [HERE_MARKER]): show it on the Now tab. */
     private fun openFromWidget(intent: Intent?) {
         val ref = intent?.getStringExtra(Widgets.EXTRA_PLACE) ?: return
         intent.removeExtra(Widgets.EXTRA_PLACE)
         if (searchMode != SEARCH_NONE) closeSearch(TAB_NOW)
-        setPlace(if (ref.isEmpty()) null else Place.parse(ref))
+        when {
+            !Here.ENABLED -> setPlace(if (ref.isEmpty()) null else Place.parse(ref))
+            ref == HERE_MARKER -> {
+                setPlace(null)
+                Here.widgetOpened()
+            }
+            // The hometown itself, also while My location is the default.
+            else -> setPlace(if (ref.isEmpty()) store.home else Place.parse(ref))
+        }
         showTab(TAB_NOW)
     }
 
@@ -217,9 +247,14 @@ class MainActivity : Activity(), Repo.Listener {
             radarAutoPlay = true
             render()
         }
+        if (Here.ENABLED) {
+            Here.resume()
+            hereChanged(false) // the permission or the location setting may have changed while away
+        }
     }
 
     override fun onPause() {
+        if (Here.ENABLED) Here.pause()
         handler.removeCallbacks(ticker)
         radarView.pause()
         TileCache.flush()
@@ -233,8 +268,16 @@ class MainActivity : Activity(), Repo.Listener {
 
     override fun onDestroy() {
         if (repo.listener === this) repo.listener = null
+        // A newer MainActivity may already be attached (an old one's onDestroy can come after its onCreate).
+        if (Here.ENABLED && generation == created) Here.attach(null)
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Empty results mean the request was cancelled (e.g. another was showing): nothing changes.
+        if (Here.ENABLED && grantResults.isNotEmpty()) Here.onPermissionsResult(requestCode)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -247,6 +290,7 @@ class MainActivity : Activity(), Repo.Listener {
     private val ticker = object : Runnable {
         override fun run() {
             reload(force = false)
+            if (Here.ENABLED) Here.tick(searchMode == SEARCH_NONE && place?.here == true)
             val hour = forecast?.localNow()?.truncatedTo(ChronoUnit.HOURS)
             if (hour != renderedHour) {
                 renderedHour = hour
@@ -264,13 +308,13 @@ class MainActivity : Activity(), Repo.Listener {
 
     private fun reload(force: Boolean) {
         val p = place
-        val cities = tab == TAB_CITIES && store.allPlaces.isNotEmpty()
+        val cities = tab == TAB_CITIES && listed().isNotEmpty()
         if (force && (p != null || cities)) {
             refreshing = true
             renderHeader()
         }
         p?.let { repo.loadForecast(it, force) }
-        if (cities) repo.loadSummaries(store.allPlaces, force)
+        if (cities) repo.loadSummaries(listed(), force)
         if (tab == TAB_RADAR && p != null) repo.loadRadar(force)
     }
 
@@ -298,9 +342,9 @@ class MainActivity : Activity(), Repo.Listener {
         render()
     }
 
-    /** Switches the forecast tabs to [p] (null = hometown). Caller renders. */
+    /** Switches the forecast tabs to [p] (null = the default place). Caller renders. */
     private fun setPlace(p: Place?) {
-        viewing = p?.takeIf { it != store.home }
+        viewing = p?.takeIf { it != defaultPlace }
         forecast = place?.let(repo::cached)
         error = null
         markDirty()
@@ -316,11 +360,68 @@ class MainActivity : Activity(), Repo.Listener {
         store.cities = cities
         store.home = p
         setPlace(null)
-        repo.loadSummaries(store.allPlaces, false)
+        repo.loadSummaries(listed(), false)
         Widgets.update(this)
     }
 
     private fun markDirty() = dirty.fill(true)
+
+    /** Every place the Cities tab lists: My location (Weather+), the hometown, then the saved cities. */
+    private fun listed(): List<Place> =
+        if (Here.ENABLED) listOfNotNull(Here.place(this)) + store.allPlaces else store.allPlaces
+
+    // ---- My location (Weather+) -------------------------------------------------------------------------
+
+    override fun hereChanged(moved: Boolean) {
+        if (moved) {
+            val old = forecast
+            setPlace(viewing)
+            // Moved to a new spot: keep the last spot's forecast up, as "Updating…", until the new one arrives.
+            if (hadHere && viewing == null && forecast == null && old != null && place?.here == true) {
+                forecast = old
+                refreshing = true
+            }
+            if (tab == TAB_CITIES) repo.loadSummaries(listed(), false)
+        }
+        hadHere = Here.place(this) != null
+        dirty[TAB_CITIES] = true
+        if (searchMode != SEARCH_NONE) {
+            showAction(searchHere, Here.action(SLOT_SEARCH))
+            val text = Here.text(this, TEXT_SEARCH)
+            if (text != null && text != hereSearchText) searchStatus.text = text
+            hereSearchText = text
+        }
+        render()
+        syncBack()
+    }
+
+    override fun pickPlace(p: Place) {
+        if (searchMode != SEARCH_NONE) pick(p)
+    }
+
+    override fun makeHometown(p: Place) {
+        setHometown(p, keepOld = true)
+        dirty[TAB_CITIES] = true
+        render()
+        syncBack()
+    }
+
+    override fun saveCity(p: Place) {
+        if (p != store.home && p !in store.cities) store.cities = store.cities + p
+        repo.loadSummaries(listed(), false)
+        dirty[TAB_CITIES] = true
+        render()
+    }
+
+    /** Shows Weather+'s next step towards a working My location on [v] (e.g. "Allow location"), or hides it. */
+    private fun showAction(v: TextView, a: HereAction?) {
+        v.visibility = if (a != null) View.VISIBLE else View.GONE
+        if (a == null) return
+        v.text = a.label
+        v.isEnabled = a.enabled
+        v.setCompoundDrawablesRelativeWithIntrinsicBounds(a.icon, 0, 0, 0)
+        v.setOnClickListener { a.run() }
+    }
 
     // ---- Rendering -------------------------------------------------------------------------------------
 
@@ -342,7 +443,7 @@ class MainActivity : Activity(), Repo.Listener {
             label.typeface = if (on) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             v.isSelected = on
         }
-        if (t == TAB_CITIES) repo.loadSummaries(store.allPlaces, false)
+        if (t == TAB_CITIES) repo.loadSummaries(listed(), false)
         if (t == TAB_RADAR) repo.loadRadar(false)
         render()
         syncBack()
@@ -371,6 +472,12 @@ class MainActivity : Activity(), Repo.Listener {
         if (tab == TAB_NOW) {
             nowEmpty.visibility = if (p == null) View.VISIBLE else View.GONE
             nowContent.visibility = if (p == null) View.GONE else View.VISIBLE
+            if (Here.ENABLED && p == null) {
+                val a = Here.action(SLOT_WELCOME)
+                showAction(useLocation, a)
+                useLocationHint.text = Here.text(this, TEXT_HINT)
+                useLocationHint.visibility = useLocation.visibility
+            }
         }
         if (!dirty[tab]) return
         dirty[tab] = false
@@ -396,8 +503,13 @@ class MainActivity : Activity(), Repo.Listener {
             tab == TAB_CITIES -> getString(R.string.cities)
             else -> p?.name ?: getString(R.string.app_name)
         }
-        val homeMark = showsPlace && p != null && viewing == null
-        title.setCompoundDrawablesRelativeWithIntrinsicBounds(if (homeMark) R.drawable.ic_home_small else 0, 0, 0, 0)
+        val homeMark = showsPlace && p != null && (if (Here.ENABLED) p == store.home else viewing == null)
+        val mark = when {
+            Here.ENABLED && showsPlace && p?.here == true -> Here.icon()
+            homeMark -> R.drawable.ic_home_small
+            else -> 0
+        }
+        title.setCompoundDrawablesRelativeWithIntrinsicBounds(mark, 0, 0, 0)
         subtitle.text = when {
             searching -> ""
             refreshing -> "Updating…"
@@ -407,17 +519,33 @@ class MainActivity : Activity(), Repo.Listener {
         }
         subtitle.visibility = if (subtitle.text.isEmpty()) View.GONE else View.VISIBLE
         units.text = fmt.unit
-        val canRefresh = !searching && (if (tab == TAB_CITIES) store.allPlaces.isNotEmpty() else p != null)
+        val canRefresh = !searching && (if (tab == TAB_CITIES) listed().isNotEmpty() else p != null)
         refresh.visibility = if (canRefresh) View.VISIBLE else View.GONE
         backHome.visibility = if (showsPlace && viewing != null) View.VISIBLE else View.GONE
+        if (Here.ENABLED) {
+            val toHere = Here.text(this, TEXT_BACK)
+            backHome.text = toHere ?: getString(R.string.back_home)
+            backHome.setCompoundDrawablesRelativeWithIntrinsicBounds(if (toHere != null) Here.icon() else R.drawable.ic_home_small, 0, 0, 0)
+        }
     }
 
     /** e.g. "Illinois · updated 5 min ago" or "Offline · updated 2 h ago". */
     private fun placeStatus(): String {
         val p = place ?: return ""
+        if (Here.ENABLED && p.here) return hereStatus(p)
         val f = forecast ?: return p.area
         val first = error ?: p.area.substringBefore(',')
         return listOf(first, "updated " + fmt.ago(f.fetchedAt)).filter { it.isNotEmpty() }.joinToString(" · ")
+    }
+
+    /** e.g. "Locating…", "Illinois · approximate · updated 5 min ago" or "Location is off · updated 2 h ago". */
+    private fun hereStatus(p: Place): String {
+        val note = Here.note()
+        val f = forecast ?: return note ?: p.area
+        // An unnamed spot's area is its coordinates ("39.80° N, 89.64° W"), which only make sense whole.
+        val area = if (p.area.firstOrNull()?.isDigit() == true) p.area else p.area.substringBefore(',')
+        return listOfNotNull(note ?: error ?: area, Here.text(this, TEXT_APPROX), "updated " + fmt.ago(f.fetchedAt))
+            .filter { it.isNotEmpty() }.joinToString(" · ")
     }
 
     private fun renderNow(f: Forecast) {
@@ -513,6 +641,10 @@ class MainActivity : Activity(), Repo.Listener {
     private fun renderRadar() {
         val p = place ?: return
         radarView.setPlace(p.lat, p.lon)
+        if (Here.ENABLED) {
+            val me = Here.me()
+            if (me != null) radarView.setMe(me[0], me[1], me[2].toFloat()) else radarView.clearMe()
+        }
         val maps = repo.radarMaps
         radarView.maps = maps
         val n = maps?.frames?.size ?: 0
@@ -550,23 +682,30 @@ class MainActivity : Activity(), Repo.Listener {
 
     private fun renderCities() {
         citiesList.removeAllViews()
+        if (Here.ENABLED) Here.place(this)?.let { cityRow(it, RowKind.HERE) }
         val home = store.home
         if (home == null) {
             pill(citiesList, R.string.choose_hometown, R.drawable.ic_home) { openSearch(SEARCH_HOME) }
         } else {
-            cityRow(home, isHome = true)
+            cityRow(home, RowKind.HOME)
         }
-        store.cities.forEach { cityRow(it, isHome = false) }
+        store.cities.forEach { cityRow(it, RowKind.CITY) }
+        if (Here.ENABLED) Here.action(SLOT_CITIES)?.let { showAction(inflate(R.layout.pill, citiesList) as TextView, it) }
         pill(citiesList, R.string.add_city, R.drawable.ic_add) { openSearch(SEARCH_ADD) }
         inflate(R.layout.attribution, citiesList)
     }
 
-    private fun cityRow(p: Place, isHome: Boolean) {
+    private fun cityRow(p: Place, kind: RowKind) {
         val row = inflate(R.layout.row_city, citiesList)
         val name = row.findViewById<TextView>(R.id.name)
         name.text = p.name
-        name.setCompoundDrawablesRelativeWithIntrinsicBounds(if (isHome) R.drawable.ic_home_small else 0, 0, 0, 0)
-        row.text(R.id.area, p.area)
+        val mark = when (kind) {
+            RowKind.HOME -> R.drawable.ic_home_small
+            RowKind.HERE -> Here.icon()
+            RowKind.CITY -> 0
+        }
+        name.setCompoundDrawablesRelativeWithIntrinsicBounds(mark, 0, 0, 0)
+        row.text(R.id.area, if (kind == RowKind.HERE) Here.note() ?: p.area else p.area)
         val s = repo.summary(p)
         if (s != null) {
             row.icon(R.id.icon, s.code, s.isDay)
@@ -582,7 +721,7 @@ class MainActivity : Activity(), Repo.Listener {
             showTab(TAB_NOW)
         }
         row.setOnLongClickListener {
-            cityMenu(p, isHome)
+            if (kind == RowKind.HERE) Here.menu(p) else cityMenu(p, kind == RowKind.HOME)
             true
         }
     }
@@ -650,6 +789,10 @@ class MainActivity : Activity(), Repo.Listener {
         results.clear()
         resultsAdapter.notifyDataSetChanged()
         searchStatus.setText(R.string.search_help)
+        if (Here.ENABLED) {
+            showAction(searchHere, Here.action(SLOT_SEARCH))
+            hereSearchText = Here.text(this, TEXT_SEARCH)
+        }
         pages.forEach { it.visibility = View.GONE }
         status.visibility = View.GONE
         tabs.visibility = View.GONE
@@ -840,7 +983,9 @@ class MainActivity : Activity(), Repo.Listener {
         })
         findViewById<View>(R.id.radar_zoom_in).setOnClickListener { radarView.zoomBy(1.0) }
         findViewById<View>(R.id.radar_zoom_out).setOnClickListener { radarView.zoomBy(-1.0) }
-        findViewById<View>(R.id.radar_locate).setOnClickListener { radarView.recenter() }
+        findViewById<View>(R.id.radar_locate).setOnClickListener {
+            if (Here.ENABLED) Here.locateOnRadar(radarView) else radarView.recenter()
+        }
     }
 
     private fun pill(parent: ViewGroup, text: Int, icon: Int, onClick: () -> Unit) {
@@ -880,7 +1025,12 @@ class MainActivity : Activity(), Repo.Listener {
     private fun <T> List<T>.swapped(a: Int, b: Int): List<T> =
         toMutableList().also { it[a] = this[b]; it[b] = this[a] }
 
+    private enum class RowKind { HOME, HERE, CITY }
+
     private companion object {
+        /** MainActivity instances so far, to tell the newest one apart. */
+        var created = 0
+
         const val TAB_NOW = 0
         const val TAB_HOURLY = 1
         const val TAB_DAILY = 2

@@ -13,14 +13,15 @@ object TestData {
     val paris = Place("Paris", "Île-de-France, France", 48.85341, 2.3488)
     val tokyo = Place("Tokyo", "Tokyo, Japan", 35.6895, 139.69171)
 
-    /** Store and Repo live for the whole process; give every test a clean one. */
+    /** Store, Repo and Here live for the whole process; give every test a clean one. */
     fun resetSingletons() {
         for (c in listOf(Store::class.java, Repo::class.java)) {
             c.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
         }
+        Here.resetForTest()
     }
 
-    /** Hometown + two cities, °F, the given theme, and forecasts cached [ageMs] ago. */
+    /** Hometown + two cities (and no My location), °F, the given theme, and forecasts cached [ageMs] ago. */
     fun seed(app: Context, theme: Int, withPlaces: Boolean = true, ageMs: Long = 0) {
         val prefs = app.getSharedPreferences("weather", Context.MODE_PRIVATE).edit().clear()
         if (withPlaces) {
@@ -28,6 +29,7 @@ object TestData {
             prefs.putString("cities", Place.listJson(listOf(paris, tokyo)))
         }
         prefs.putBoolean("imperial", true).putInt("theme", theme).commit()
+        for (name in listOf("here.json", "names.json")) File(app.noBackupFilesDir, name).delete()
 
         val now = System.currentTimeMillis()
         val body = forecastJson(now)

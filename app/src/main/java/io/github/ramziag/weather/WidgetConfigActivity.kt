@@ -9,8 +9,8 @@ import android.os.Bundle
 import android.view.ContextThemeWrapper
 
 /**
- * Picks the city a widget shows: the hometown (default) or one of the saved cities. Shown when the widget is
- * placed on Android 11, and from the widget's "reconfigure" (touch & hold) option on Android 12+.
+ * Picks the city a widget shows: the hometown (default), My location (Weather+) or one of the saved cities. Shown
+ * when the widget is placed on Android 11, and from the widget's "reconfigure" (touch & hold) option on Android 12+.
  */
 class WidgetConfigActivity : Activity() {
 
@@ -33,23 +33,33 @@ class WidgetConfigActivity : Activity() {
         val home = store.home
         val cities = store.cities
         val chosen = Widgets.chosenPlace(this, id)
-        // null = follow the hometown. A widget can be set to a city that has since become the hometown; keep
-        // that choice on the list so it shows as picked.
-        val options: List<Place?> = listOf(null) + cities + listOfNotNull(chosen?.takeIf { it !in cities })
-        val labels = options.map { p ->
-            when {
-                p == null -> getString(R.string.widget_follow_home) + (home?.let { " · ${it.name}" } ?: "")
-                p.area.isEmpty() -> p.name
-                else -> "${p.name}, ${p.area.substringBefore(',')}"
+        val hereChosen = Here.ENABLED && Widgets.chosenRef(this, id) == HERE_MARKER
+        // Each option is a label and what picking it stores. A widget can be set to a city that has since become
+        // the hometown; keep that choice on the list so it shows as picked.
+        val options = ArrayList<Pair<String, () -> Unit>>()
+        var current = -1
+        fun option(label: String, picked: Boolean, choose: () -> Unit) {
+            if (picked) current = options.size
+            options += label to choose
+        }
+        option(getString(R.string.widget_follow_home) + (home?.let { " · ${it.name}" } ?: ""), chosen == null && !hereChosen) {
+            Widgets.choose(this, id, null)
+        }
+        if (Here.ENABLED && (hereChosen || Here.place(this) != null)) {
+            option(Here.text(this, TEXT_WIDGET).orEmpty(), hereChosen) { Widgets.chooseHere(this, id) }
+        }
+        for (p in cities + listOfNotNull(chosen?.takeIf { it !in cities })) {
+            option(if (p.area.isEmpty()) p.name else "${p.name}, ${p.area.substringBefore(',')}", p == chosen) {
+                Widgets.choose(this, id, p)
             }
-        }.toTypedArray()
-        val current = options.indexOf(chosen)
+        }
+        val labels = options.map { it.first }.toTypedArray()
 
         val themed = ContextThemeWrapper(this, Themes.style(store.theme, resources.configuration))
         AlertDialog.Builder(themed)
             .setTitle(R.string.widget_pick)
             .setSingleChoiceItems(labels, current) { dialog, which ->
-                Widgets.choose(this, id, options[which])
+                options[which].second()
                 mgr.updateAppWidget(id, Widgets.build(this, mgr, id))
                 Widgets.refreshIfStale(this, intArrayOf(id))
                 setResult(RESULT_OK, result)

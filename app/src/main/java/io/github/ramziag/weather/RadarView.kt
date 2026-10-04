@@ -15,7 +15,9 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -46,6 +48,13 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         style = Paint.Style.STROKE
         strokeWidth = 2.5f * resources.displayMetrics.density
     }
+    private val meDot = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val meHalo = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val meArea = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val meEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = resources.displayMetrics.density
+    }
     private val dst = RectF()
     private val src = Rect()
 
@@ -54,6 +63,12 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
     private var cy = 0.5
     private var placeX = Double.NaN
     private var placeY = Double.NaN
+
+    // Weather+'s own position (see [setMe]): Mercator fractions, accuracy in metres and metres per world width.
+    private var meX = Double.NaN
+    private var meY = Double.NaN
+    private var meAccM = 0f
+    private var meWorldM = 0.0
 
     var maps: Radar.Maps? = null
         set(value) {
@@ -78,6 +93,11 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         dark = Color.luminance(bg) < 0.4f
         markerFill.color = themeColor(R.attr.wAccent)
         markerRing.color = themeColor(R.attr.wText)
+        meDot.color = markerRing.color
+        meHalo.color = bg
+        meEdge.color = markerFill.color
+        meArea.color = markerFill.color
+        meArea.alpha = 64
         basePaint.colorFilter = ColorMatrixColorFilter(mapStyle(dark, bg))
         base.onLoaded = { invalidate() }
         radar.onLoaded = { invalidate() }
@@ -97,6 +117,33 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         cx = placeX
         cy = placeY
         zoom = DEFAULT_ZOOM
+        invalidate()
+    }
+
+    /** Shows the phone's position as a dot with its accuracy circle. Never moves the map by itself. */
+    fun setMe(lat: Double, lon: Double, accM: Float) {
+        val x = Radar.mercatorX(lon)
+        val y = Radar.mercatorY(lat)
+        if (x == meX && y == meY && accM == meAccM) return
+        meX = x
+        meY = y
+        meAccM = accM
+        meWorldM = EARTH_M * cos(Math.toRadians(lat))
+        invalidate()
+    }
+
+    fun clearMe() {
+        if (meX.isNaN()) return
+        meX = Double.NaN
+        meY = Double.NaN
+        invalidate()
+    }
+
+    /** Centres on a spot, zooming in to at least [minZoom]. */
+    fun centerOn(lat: Double, lon: Double, minZoom: Double) {
+        cx = Radar.mercatorX(lon)
+        cy = Radar.mercatorY(lat)
+        zoom = max(zoom, minZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
         invalidate()
     }
 
@@ -186,13 +233,33 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         base.commit()
 
         val world = worldSize()
-        val dxw = (placeX - cx).let { it - Math.rint(it) } // shortest way round the date line
-        val px = (dxw * world + width / 2.0).toFloat()
-        val py = ((placeY - cy) * world + height / 2.0).toFloat()
-        val r = 7 * resources.displayMetrics.density
+        val density = resources.displayMetrics.density
+        val meShown = !meX.isNaN()
+        val mx = if (meShown) screenX(meX, world) else 0f
+        val my = if (meShown) screenY(meY, world) else 0f
+        if (meShown) {
+            // Accuracy circle, under the city marker; only when it is bigger than the dot and its halo.
+            val r = min(meAccM / meWorldM * world, hypot(width.toDouble(), height.toDouble())).toFloat()
+            if (r > 8 * density) {
+                canvas.drawCircle(mx, my, r, meArea)
+                canvas.drawCircle(mx, my, r, meEdge)
+            }
+        }
+        val px = screenX(placeX, world)
+        val py = screenY(placeY, world)
+        val r = 7 * density
         canvas.drawCircle(px, py, r, markerFill)
         canvas.drawCircle(px, py, r, markerRing)
+        if (meShown) {
+            canvas.drawCircle(mx, my, 6 * density, meHalo)
+            canvas.drawCircle(mx, my, 4 * density, meDot)
+        }
     }
+
+    /** Screen position of a Mercator x, the shortest way round the date line. */
+    private fun screenX(x: Double, world: Double) = ((x - cx).let { it - Math.rint(it) } * world + width / 2.0).toFloat()
+
+    private fun screenY(y: Double, world: Double) = ((y - cy) * world + height / 2.0).toFloat()
 
     /** While a tile loads, stretch an already-loaded ancestor over its spot. */
     private fun drawParent(canvas: Canvas, z: Int, x: Int, y: Int) {
@@ -345,6 +412,7 @@ class RadarView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
         const val FRAME_MS = 500L
         const val HOLD_LAST_MS = 1500L
         const val MAX_WAIT_MS = 3000
+        const val EARTH_M = 40_075_017.0 // the equator's length
 
         /** Hue rotation by 180° (the W3C feColorMatrix hueRotate formula). */
         val HUE_180 = ColorMatrix(
